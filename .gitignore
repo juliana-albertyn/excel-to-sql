@@ -1,0 +1,11 @@
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+
+# Ignore virtual environments
+.venv/
+.env/
+
+# ignore log files
+logs/
+data/raw/.~lock.fake_data.xlsx#
