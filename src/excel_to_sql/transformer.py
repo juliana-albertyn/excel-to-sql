@@ -10,7 +10,6 @@ Pivoting / unpivoting
 Exploding lists
 Aggregating rows
 Flattening nested data
-Explode lists
 Generate load timestamps
 Add batch_id
 Add ETL metadata columns
@@ -60,6 +59,7 @@ def normalise_phone_numbers(series: pd.Series):
 
     return s
 
+
 import pandas as pd
 import logging
 
@@ -97,12 +97,9 @@ def apply_derived_column(
     # 5️⃣ Log invalid rows
     if (~mask_valid).any():
         invalid_indices = df.index[~mask_valid].tolist()
-        logger.warning(
-            f"Cannot compute '{target_col}' for rows: {invalid_indices}"
-        )
+        logger.warning(f"Cannot compute '{target_col}' for rows: {invalid_indices}")
 
     return df
-
 
 
 def apply_mappings(
@@ -116,7 +113,7 @@ def apply_mappings(
 
     # log start of transformation
     logger = logging_setup.get_logger(context, __name__)
-    logger.info("Transforming data for {table_name}")
+    logger.info("Transforming data for *** {table_name} ***")
 
     # we work only with cleaned columns - keep original data intact
     normalised_cols = []
@@ -143,16 +140,18 @@ def apply_mappings(
             )
         if is_string_dtype(df[col_name]) and config["format"] == "E.164":
             normalised_cols.extend(normalised_col)
-            df[normalised_col] = (df[cleaned_col].astype("string").apply(normalise_phone_numbers))
+            df[normalised_col] = (
+                df[cleaned_col].astype("string").apply(normalise_phone_numbers)
+            )
 
-        # check derived columns   
+        # check derived columns
         if is_numeric_dtype(df[col_name]) and config.get("derived_from", "") != "":
             normalised_cols.extend(normalised_col)
             df = apply_derived_column(
                 df=df,
                 target_col=normalised_col,
-                formula=config["derived_from"]["formula"],
-                depends_on = config["derived_from"]["depends_on"]
+                formula=config["formula"],
+                depends_on=config["depends_on"],
             )
 
     if len(normalised_cols) > 0:
@@ -163,7 +162,7 @@ def apply_mappings(
         for col in normalised_cols:
             cleaned_col = col.replace("_normalised", "_cleaned")
             df[cleaned_col] = df[col]
-            df.drop(columns=[col], inplace=True)  
+            df.drop(columns=[col], inplace=True)
 
     # reset the attributes
     df.file_name = file_name

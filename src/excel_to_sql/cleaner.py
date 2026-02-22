@@ -25,6 +25,7 @@ __date__ = "2026-02-08"
 from typing import Any, Optional
 import pandas as pd
 from pandas import DataFrame
+import numpy as np
 from datetime import date, datetime
 from logging import Logger
 
@@ -150,7 +151,7 @@ def clean_data(
 
     # log before info
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Cleaning data for {table_name} - locale {locale}")
+    logger.info(f"Cleaning data for *** {table_name} ***")
     logger.info("=== Before cleaning data ===")
     logger.info(f"Shape: {df.shape}")
     logger.info(f"Number of NaN/NaT:\n{df.isna().sum()}")
@@ -199,6 +200,13 @@ def clean_data(
                 df[cleaned_col] = df[col_name].astype(str).str.strip().str.upper()
             elif str_case == "title":
                 df[cleaned_col] = df[col_name].astype(str).str.strip().str.title()
+            # get the column values
+            series = df[cleaned_col]
+            # Mask empty strings and "nan" strings
+            mask = (series == "") | (series.str.lower() == "nan")
+            series = series.mask(mask, pd.NA)
+            # make all non-empty strings string type. Empty are NaN
+            df[cleaned_col] = series.astype("string")
         elif dtype == "bit":
             df[cleaned_col] = df[col_name].apply(str_to_bool)
         elif dtype in ["date", "time", "datetime"]:

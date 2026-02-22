@@ -29,7 +29,7 @@ def run_etl(config: Dict[str, Any], context: Dict[str, Any]):
     context (dict[str, Any]): run time context used by all units
     """
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Start ETL pipeline for {config["file"]}")
+    logger.info(f"Start ETL pipeline for {config["source"]["file"]}")
 
     # get local from context
     locale = context["locale"]

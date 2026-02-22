@@ -32,6 +32,7 @@ context = {
     "project_name": cfg.get("project_name", "excel_to_sql"),
     "locale": cfg["source"].get("localisation", "en_ZA"),
     "environment": "development",
+    "validation_mode": cfg.get("validation_mode", "strict"),
     "data_dir": Path(project_root / cfg.get("data_dir", "")),
     "log_dir": log_dir,
     "log_level": "INFO",

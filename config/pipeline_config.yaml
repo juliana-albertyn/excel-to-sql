@@ -12,6 +12,7 @@ data_dir: ./data/raw
 #---------------#
 
 project_name: excel_to_sql
+validation_mode: strict # strict | permissive
 
 source:
     type: excel
@@ -97,6 +98,7 @@ columns:
             case: title # options: lower, upper, title, asis
             format: person_name
             required: true
+            on_error: warn # fail | drop | warn
 
         email:
             source_column: email
@@ -104,6 +106,8 @@ columns:
             case: lower # options: lower, upper, title, asis
             format: email
             required: true
+            check_deliverability: false
+            on_error: warn # fail | drop | warn
 
         mobile:
             source_column: mobile
@@ -137,6 +141,7 @@ columns:
             case: title # options: lower, upper, title, asis
             format: product_name
             required: true
+            on_error: fail # fail | drop | warn
 
         product_price:
             source_column: product_price
@@ -145,6 +150,7 @@ columns:
                 min_value: 1
                 max_value: 1000000
             required: true
+            on_error: fail # fail | drop | warn
 
         stock_quantity:
             source_column: stock_quantity
@@ -176,6 +182,7 @@ columns:
                 min_value: 1900-01-01
                 max_value: today
                 required: true
+                on_error: warn # fail | drop | warn
 
         order_status:
             source_column: status
@@ -220,6 +227,7 @@ columns:
                 min_value: 1
                 max_value: 1000000
                 required: true
+                on_error: fail # fail | drop | warn
 
         unit_price:
             source_column: unit_price
@@ -228,6 +236,7 @@ columns:
                 min_value: 1
                 max_value: 1000000.00
                 required: true
+                on_error: fail # fail | drop | warn
 
         total_price:
             source_column: total_price

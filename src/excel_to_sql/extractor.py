@@ -26,7 +26,7 @@ def load_excel(
 ) -> DataFrame:
     """load data from excel into dataframe"""
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Extracting data for {table_name}")
+    logger.info(f"Extracting data for *** {table_name} ***")
     logger.info(f"Pandas version {pd.__version__}")
     file_name = Path(context["data_dir"]) / src_config["file"]
     df = pd.read_excel(
