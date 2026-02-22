@@ -86,6 +86,11 @@ def fake_amount() -> str:
     ]
     return random.choice(amount_options)
 
+def fake_order_status() -> str:
+    status_options = ["completed", "c", "complete", "done", "closed", 
+                    "pending", "p",
+                    "cancelled", "x"]
+    return random.choice(status_options)
 
 # Create fake data for two sheets
 data_customers = {
@@ -108,6 +113,7 @@ data_orders = {
     "order_id": [i for i in range(101, 121)],
     "customer_id": [i for i in range(1, 21)],
     "order_date": [fake_date() for _ in range(20)],
+    "status": [fake_order_status() for _ in range(20)]
 }
 
 data_order_items = []
@@ -137,12 +143,8 @@ df_orders = pd.DataFrame(data_orders)
 df_order_items = pd.DataFrame(data_order_items)
 
 # Write to Excel with four sheets
-with pd.ExcelWriter("fake_data.xlsx") as writer:
+with pd.ExcelWriter("messy_orders.xlsx") as writer:
     df_customers.to_excel(writer, sheet_name="Customers", index=False)
     df_product.to_excel(writer, sheet_name="Products", index=False)
     df_orders.to_excel(writer, sheet_name="Orders", index=False)
     df_order_items.to_excel(writer, sheet_name="OrderItems", index=False)
-
-
-if __name__ == "__main__":
-    print(fake_product())

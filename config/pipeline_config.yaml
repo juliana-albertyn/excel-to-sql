@@ -1,10 +1,11 @@
 # excel_to_sql project configuration
+# sql first configuation
 
 #-------#
 # Paths #
 #-------#
 # Path to raw data (relative to project root)
-data_dir: ../data/raw
+data_dir: ./data/raw
 
 #---------------#
 # Global config #
@@ -14,9 +15,9 @@ project_name: excel_to_sql
 
 source:
     type: excel
-    file: fake_data.xlsx
+    file: messy_orders.xlsx
     locale: en_ZA
-    header_row: 1
+    header_row: 0
 
 target:
     db_type: mssql
@@ -37,10 +38,11 @@ target:
 #----------------#
 
 cleaning:
-    global:
-        trim_whitespace: true
-        standardise_nulls: true
-        remove_blank_rows: true
+    trim_whitespace: true
+    standardise_nulls: true
+    remove_blank_rows: true
+    day_first_format: true
+    currency_symbol: "R"
 
 #-----------------------#
 # Sheet → table mapping #
@@ -63,6 +65,19 @@ mappings:
         sheet_name: OrderItems
         target_table: order_items
 
+#-----------------------------#
+# Notes about SQL data types  #
+# Not all data types included #
+#-----------------------------#
+
+# SQL data types
+# Exact numerics: tinyint, smallint, int, bigint, bit, decimal/numeric, money, smallmoney
+# Approximate numerics: float, real
+# Date and time: date, time, datetime
+# Character strings: char, varchar, text
+# Unicode character strings: nchar, nvarchar, ntext
+# Binary strings: binary, varbinary, image
+
 #--------------#
 # Column rules #
 #--------------#
@@ -71,29 +86,34 @@ columns:
     customers:
         customer_id:
             source_column: id
-            data_type: integer
+            data_type: int
             primary_key: true
             validation:
                 min_value: 1
 
         customer_name:
-            source_column: customer_name
-            data_type: string
+            source_column: name
+            data_type: varchar(50)
+            case: title # options: lower, upper, title, asis
             format: person_name
+            required: true
 
         email:
             source_column: email
-            data_type: string
+            data_type: varchar(255)
+            case: lower # options: lower, upper, title, asis
             format: email
+            required: true
 
         mobile:
             source_column: mobile
-            data_type: string
-            format: mobile
+            data_type: varchar(10)
+            format: E.164
 
         city:
             source_column: city
-            data_type: string
+            data_type: varchar(30)
+            case: title # options: lower, upper, title, asis
 
         join_date:
             source_column: join_date
@@ -106,27 +126,29 @@ columns:
     products:
         product_id:
             source_column: product_id
-            data_type: integer
+            data_type: int
             primary_key: true
             validation:
                 min_value: 1001
 
         product_name:
             source_column: product_name
-            data_type: string
+            data_type: varchar(50)
+            case: title # options: lower, upper, title, asis
             format: product_name
+            required: true
 
         product_price:
             source_column: product_price
-            data_type: float
-            format: currency
+            data_type: money
             validation:
                 min_value: 1
                 max_value: 1000000
+            required: true
 
         stock_quantity:
             source_column: stock_quantity
-            data_type: integer
+            data_type: int
             validation:
                 min_value: 0
                 max_value: 1000000
@@ -134,16 +156,17 @@ columns:
     orders:
         order_id:
             source_column: order_id
-            data_type: integer
+            data_type: int
             primary_key: true
             validation:
                 min_value: 100
 
         customer_id:
             source_column: customer_id
-            data_type: integer
+            data_type: int
             validation:
                 foreign_key: customers.customer_id
+                required: true
 
         order_date:
             source_column: order_date
@@ -152,44 +175,63 @@ columns:
             validation:
                 min_value: 1900-01-01
                 max_value: today
+                required: true
+
+        order_status:
+            source_column: status
+            data_type: varchar(10)
+            value_mapping:
+                completed:
+                    - c
+                    - complete
+                    - done
+                    - closed
+                pending:
+                    - p
+                    - pending
+                cancelled:
+                    - x
+                    - cancelled
 
     order_items:
         order_item_id:
             source_column: order_item_id
-            data_type: integer
+            data_type: int
             primary_key: true
 
         order_id:
             source_column: order_id
-            data_type: integer
+            data_type: int
             validation:
                 foreign_key: orders.order_id
+                required: true
 
         product_id:
             source_column: product_id
-            data_type: integer
+            data_type: int
             validation:
                 foreign_key: products.product_id
+                required: true
 
         quantity:
             source_column: quantity
-            data_type: integer
+            data_type: int
             validation:
                 min_value: 1
                 max_value: 1000000
+                required: true
 
         unit_price:
             source_column: unit_price
-            data_type: float
-            format: currency
+            data_type: money
             validation:
                 min_value: 1
                 max_value: 1000000.00
+                required: true
 
         total_price:
             source_column: total_price
-            data_type: float
-            format: currency
+            data_type: money
             validation:
                 derived_from:
                     formula: "quantity * unit_price"

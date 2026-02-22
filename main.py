@@ -25,15 +25,19 @@ with open(config_file) as f:
     cfg = yaml.safe_load(f)
 
 # runtime context
+# Get current datetime once
+now = datetime.now()
+
 context = {
     "project_name": cfg.get("project_name", "excel_to_sql"),
     "locale": cfg["source"].get("localisation", "en_ZA"),
     "environment": "development",
-    "data_dir": cfg.get("data_dir", ""),
+    "data_dir": Path(project_root / cfg.get("data_dir", "")),
     "log_dir": log_dir,
     "log_level": "INFO",
     "max_logs": 5,  # keep last 5 log files per module
-    "run_timestamp": datetime.now().strftime(
+    "run_date": now.date(),  # datetime.date object
+    "run_timestamp": now.strftime(
         "%Y-%m-%d_%H-%M-%S"
     ),  # all log files for the same run have the same timestamp
 }
@@ -55,7 +59,7 @@ etl_config = {
     "cleaning": cleaning_rules,
     "mappings": mapping_config,
     "columns": columns_config,
-    "target": source_config,
+    "target": target_config,
 }
 
 # Pass the configuration object and context to pipeline

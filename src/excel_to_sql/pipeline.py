@@ -29,19 +29,19 @@ def run_etl(config: Dict[str, Any], context: Dict[str, Any]):
     context (dict[str, Any]): run time context used by all units
     """
     logger = logging_setup.get_logger(context, __name__)
-    logger.info("Start ETL pipeline")
+    logger.info(f"Start ETL pipeline for {config["file"]}")
 
     # get local from context
     locale = context["locale"]
 
     for table_name, mapping in config["mappings"].items():
-        logger.info(f"Processing table: {table_name}")
-
         # Step 1: extract sheet
-        df = extractor.load_excel(config["source"], mapping["sheet_name"], context)
+        df = extractor.load_excel(config["source"], table_name, mapping["sheet_name"], config["columns"][table_name], context)
 
         # Step 2: clean
-        df = cleaner.clean_data(df, config["cleaning"], locale, context)
+        df = cleaner.clean_data(
+            df, config["cleaning"], config["columns"][table_name], locale, context
+        )
 
         # Step 3: transform
         df = transformer.apply_mappings(df, config["columns"][table_name], context)

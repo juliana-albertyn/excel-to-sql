@@ -23,6 +23,7 @@ def load_to_sql(
 ) -> None:
     """Write dataframe to SQL table"""
     logger = logging_setup.get_logger(context, __name__)
+    logger.info(f"Source: {df.file_name} / {df.sheet_name}")
     logger.info(f"Writing to table {target_table}")
 
     # engine = create_engine(connection_string, fast_executemany=True)
