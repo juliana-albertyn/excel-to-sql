@@ -119,25 +119,27 @@ def remove_empty_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
     """log only changed values per table"""
-    logger.info(f"Audit of changed values for {df.table_name}:")
+    logger.info(f"Audit of cleaned values for *** {df.table_name} ***:")
     for col in df.columns:
         if col.endswith("_cleaned"):
             original_col = col.replace("_cleaned", "")
 
             mask = df[original_col].astype("string").ne(df[col].astype("string"))
 
-            for idx in df.index[mask]:
-                logger.info(
-                    f"{original_col} | Row {idx} | "
-                    f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
-                )
+            if not mask.any():
+                logger.info(f"No cleaned values for column {original_col}")
+            else:
+                for idx in df.index[mask]:
+                    logger.info(
+                        f"{original_col} | Row {idx} | "
+                        f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
+                    )
 
 
 def clean_data(
     df: DataFrame,
     cleaning_rules: dict[str, Any],
     column_config: dict[str, Any],
-    locale: str,
     context: dict[str, Any],
 ) -> pd.DataFrame:
     """Clean data using cleaning rules from yaml."""
@@ -151,10 +153,8 @@ def clean_data(
 
     # log before info
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Cleaning data for *** {table_name} ***")
-    logger.info("=== Before cleaning data ===")
-    logger.info(f"Shape: {df.shape}")
-    logger.info(f"Number of NaN/NaT:\n{df.isna().sum()}")
+    logger.info(f"Cleaning data for *** {table_name} ***. Shape: {df.shape}")
+    NANs_before = f"{df.isna().sum()}"
 
     # rename all the columns to the sql column names specified in the yaml file
     rename_map = {
@@ -200,6 +200,8 @@ def clean_data(
                 df[cleaned_col] = df[col_name].astype(str).str.strip().str.upper()
             elif str_case == "title":
                 df[cleaned_col] = df[col_name].astype(str).str.strip().str.title()
+            else:
+                df[cleaned_col] = df[col_name]
             # get the column values
             series = df[cleaned_col]
             # Mask empty strings and "nan" strings
@@ -245,9 +247,7 @@ def clean_data(
 
     # log shape and NaN after cleaning
     logger.info("=== After cleaning data ===")
-    logger.info(f"Shape: {df.shape}")
-    logger.info(f"Number of NaN/NaT:\n{df.isna().sum()}")
-    logger.info(f"Data types:\n{df.dtypes}")
+    logger.info(f"\nNumber of NaN/NaT:\n{df.isna().sum()}")
 
     # set df attributes back to saved values, because you loose them when a dataframe is copied
     df.file_name = file_name

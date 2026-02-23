@@ -29,26 +29,30 @@ from pandas import DataFrame
 from pandas.api.types import is_datetime64_any_dtype, is_numeric_dtype, is_string_dtype
 from logging import Logger
 
+
 import src.excel_to_sql.logging_setup as logging_setup
 
 
-def log_column_normalisation(df: pd.DataFrame, logger: Logger) -> None:
+def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
     """log only changed values per table"""
-    logger.info(f"Audit of changed values for {df.table_name}:")
+    logger.info(f"Audit of transformed values for *** {df.table_name} ***:")
     for col in df.columns:
         if col.endswith("_normalised"):
             original_col = col.replace("_normalised", "")
 
             mask = df[original_col].astype("string").ne(df[col].astype("string"))
 
-            for idx in df.index[mask]:
-                logger.info(
-                    f"{original_col} | Row {idx} | "
-                    f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
-                )
+            if not mask.any():
+                logger.info(f"No transformed values for {original_col}")
+            else:    
+                for idx in df.index[mask]:
+                    logger.info(
+                        f"{original_col} | Row {idx} | "
+                        f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
+                    )
 
 
-def normalise_phone_numbers(series: pd.Series):
+def normalise_phone_numbers(series: pd.Series) -> pd.Series:
     s = series.astype("string")
 
     # remove spaces, dashes, brackets
@@ -60,23 +64,17 @@ def normalise_phone_numbers(series: pd.Series):
     return s
 
 
-import pandas as pd
-import logging
-
-logger = logging.getLogger(__name__)
-
-
 def apply_derived_column(
     df: pd.DataFrame,
     target_col: str,
     formula: str,
     depends_on: list[str],
+    logger: Logger
 ) -> pd.DataFrame:
     """
     Applies a vectorised derived column safely using pandas eval,
     only when all dependencies are present.
     """
-
     # Ensure dependencies exist
     missing_cols = [col for col in depends_on if col not in df.columns]
     if missing_cols:
@@ -102,8 +100,8 @@ def apply_derived_column(
     return df
 
 
-def apply_mappings(
-    df: DataFrame, column_config: dict[str, Any], context: dict[str, Any]
+def transform_data(
+    df: DataFrame, columns_config: dict[str, Any], context: dict[str, Any]
 ) -> DataFrame:
     """Use mapping configuration to transform the data"""
 
@@ -113,50 +111,62 @@ def apply_mappings(
 
     # log start of transformation
     logger = logging_setup.get_logger(context, __name__)
-    logger.info("Transforming data for *** {table_name} ***")
+    logger.info(f"Transforming data for *** {table_name} ***")
 
     # we work only with cleaned columns - keep original data intact
     normalised_cols = []
-    for col_name, config in column_config.items():
+
+    for col_name, config in columns_config.items():
         # set up
         cleaned_col = col_name + "_cleaned"
         normalised_col = col_name + "_normalised"
-        # check required columns are there
 
-        # normalise coulmns
-        value_map = config.get("value_mapping", "").lower()
-        if len(value_map) != 0:
+        # get the validation config
+        value_map = None
+        validation_config = config.get("validation", None)
+        if validation_config is not None:
+            value_map = validation_config.get("value_mapping", None)
+
+        # normalise columns
+        if value_map is not None:
             # keep track of which columns were affected
-            normalised_cols.extend(normalised_col)
+            normalised_cols.append(normalised_col)
 
             # normalise values
             mapping = {}
-            for normalised, raw_list in config.items():
+            for normalised, raw_list in value_map.items():
                 for raw_val in raw_list:
                     mapping[str(raw_val).strip().lower()] = normalised
 
             df[normalised_col] = (
                 df[cleaned_col].astype("string").str.strip().str.lower().map(mapping)
             )
-        if is_string_dtype(df[col_name]) and config["format"] == "E.164":
-            normalised_cols.extend(normalised_col)
-            df[normalised_col] = (
-                df[cleaned_col].astype("string").apply(normalise_phone_numbers)
-            )
+        if validation_config is not None:
+            if (
+                is_string_dtype(df[col_name])
+                and validation_config.get("format", "") == "E.164"
+            ):
+                normalised_cols.append(normalised_col)
+                df[normalised_col] = normalise_phone_numbers(df[cleaned_col])
 
-        # check derived columns
-        if is_numeric_dtype(df[col_name]) and config.get("derived_from", "") != "":
-            normalised_cols.extend(normalised_col)
-            df = apply_derived_column(
-                df=df,
-                target_col=normalised_col,
-                formula=config["formula"],
-                depends_on=config["depends_on"],
-            )
+            # check derived columns
+            derived_config = validation_config.get("derived_from", None)
+            if is_numeric_dtype(df[col_name]) and derived_config is not None:
+                depends_on = derived_config.get("depends_on", None)
+                formula = derived_config.get("formula", None)
+                if depends_on is not None and formula is not None:
+                    normalised_cols.append(normalised_col)
+                    df = apply_derived_column(
+                        df=df,
+                        target_col=normalised_col,
+                        formula=formula,
+                        depends_on=depends_on,
+                        logger=logger
+                    )
 
     if len(normalised_cols) > 0:
         # just log the changed columns
-        log_column_normalisation(df, logger)
+        log_column_changes(df, logger)
 
         # move the values from normalised columns into the cleaned columns and drop the normalised columns
         for col in normalised_cols:

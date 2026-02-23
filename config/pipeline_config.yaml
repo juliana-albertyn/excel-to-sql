@@ -17,7 +17,6 @@ validation_mode: strict # strict | permissive
 source:
     type: excel
     file: messy_orders.xlsx
-    locale: en_ZA
     header_row: 0
 
 target:
@@ -89,6 +88,7 @@ columns:
             source_column: id
             data_type: int
             primary_key: true
+            required: true
             validation:
                 min_value: 1
 
@@ -96,33 +96,39 @@ columns:
             source_column: name
             data_type: varchar(50)
             case: title # options: lower, upper, title, asis
-            format: person_name
             required: true
-            on_error: warn # fail | drop | warn
+            validation:
+                format: person_name
+                nullable: true
+                on_error: warn # fail | drop | warn
 
         email:
             source_column: email
             data_type: varchar(255)
             case: lower # options: lower, upper, title, asis
-            format: email
             required: true
-            check_deliverability: false
-            on_error: warn # fail | drop | warn
+            validation:
+                format: email
+                nullable: true
+                check_deliverability: false
+                on_error: warn # fail | drop | warn
 
         mobile:
             source_column: mobile
             data_type: varchar(10)
-            format: E.164
+            required: true
+            validation:
+                format: E.164
 
         city:
             source_column: city
             data_type: varchar(30)
             case: title # options: lower, upper, title, asis
+            required: true
 
         join_date:
             source_column: join_date
             data_type: date
-            format: YYYY-MM-DD
             validation:
                 min_value: 1900-01-01
                 max_value: today
@@ -132,6 +138,7 @@ columns:
             source_column: product_id
             data_type: int
             primary_key: true
+            required: true
             validation:
                 min_value: 1001
 
@@ -139,22 +146,26 @@ columns:
             source_column: product_name
             data_type: varchar(50)
             case: title # options: lower, upper, title, asis
-            format: product_name
             required: true
-            on_error: fail # fail | drop | warn
+            validation:
+                format: product_name
+                nullable: true
+                on_error: fail # fail | drop | warn
 
         product_price:
             source_column: product_price
             data_type: money
+            required: true
             validation:
                 min_value: 1
                 max_value: 1000000
-            required: true
-            on_error: fail # fail | drop | warn
+                nullable: true
+                on_error: fail # fail | drop | warn
 
         stock_quantity:
             source_column: stock_quantity
             data_type: int
+            required: true
             validation:
                 min_value: 0
                 max_value: 1000000
@@ -164,29 +175,32 @@ columns:
             source_column: order_id
             data_type: int
             primary_key: true
+            required: true
             validation:
                 min_value: 100
 
         customer_id:
             source_column: customer_id
             data_type: int
+            required: true
             validation:
                 foreign_key: customers.customer_id
-                required: true
+                nullable: false
 
         order_date:
             source_column: order_date
             data_type: date
-            format: YYYY-MM-DD
+            required: true
             validation:
                 min_value: 1900-01-01
                 max_value: today
-                required: true
+                nullable: true
                 on_error: warn # fail | drop | warn
 
         order_status:
             source_column: status
             data_type: varchar(10)
+            required: true
             value_mapping:
                 completed:
                     - c
@@ -199,43 +213,47 @@ columns:
                 cancelled:
                     - x
                     - cancelled
+            validation: nullable = true
 
     order_items:
         order_item_id:
             source_column: order_item_id
             data_type: int
             primary_key: true
+            required: true
 
         order_id:
             source_column: order_id
             data_type: int
+            required: true
             validation:
-                foreign_key: orders.order_id
-                required: true
+                foreign_key: orders.
+                nullable: false
 
         product_id:
             source_column: product_id
             data_type: int
+            required: true
             validation:
                 foreign_key: products.product_id
-                required: true
+                nullable: false
 
         quantity:
             source_column: quantity
             data_type: int
+            required: true
             validation:
                 min_value: 1
                 max_value: 1000000
-                required: true
                 on_error: fail # fail | drop | warn
 
         unit_price:
             source_column: unit_price
             data_type: money
+            required: true
             validation:
                 min_value: 1
                 max_value: 1000000.00
-                required: true
                 on_error: fail # fail | drop | warn
 
         total_price:

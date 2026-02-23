@@ -16,15 +16,16 @@ import src.excel_to_sql.logging_setup as logging_setup
 
 
 def load_to_sql(
-    df: DataFrame,
     target: dict[str, Any],
-    target_table: str,
+    tables: dict[str, Any],
+    schema: dict[str, Any],
     context: dict[str, Any],
 ) -> None:
     """Write dataframe to SQL table"""
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Source: {df.file_name} / {df.sheet_name}")
-    logger.info(f"Writing to table {target_table}")
+    logger.info(f"Source: {context["input_file"]}")
+    for table, df in tables.items():
+        logger.info(f"Writing to table {table}")
 
     # engine = create_engine(connection_string, fast_executemany=True)
     # df.to_sql(
