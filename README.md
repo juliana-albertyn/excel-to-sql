@@ -157,7 +157,6 @@ Logging ensures traceability and easier debugging.
 ## 📈 Future Improvements
 
 * Direct database connection (PostgreSQL/MySQL)
-* Configurable schema mapping
 * CLI arguments
 * Batch file processing
 * Docker support
