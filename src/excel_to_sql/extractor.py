@@ -37,7 +37,6 @@ def load_excel(
     )
 
     # store attributes for logging in other units
-    df.file_name = file_name
     df.table_name = table_name
 
     # return the dataframe

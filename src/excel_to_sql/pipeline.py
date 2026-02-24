@@ -33,44 +33,79 @@ def str_to_bool(value: str | bool) -> bool:
     return bool(value)  # fallback for non-strings
 
 
-def config_to_schema(columns_config: Dict[str, Any]) -> dict[str, Any]:
-    """Takes the column configuration and extracts only the schema"""
+def validate_schema(columns_config: Dict[str, Any]) -> dict[str, Any]:
+    """Validates the schema, and returns normalised schema"""
+    # validate the yaml configuration - any errors here must raise exception
+
+    # return the schema
     schema = dict()
     for col_name, config in columns_config.items():
+        data_type = config["data_type"]
+        primary_key = config.get("primary_key", False)
+        required = config.get("required", False)
         schema["columns"] = {
             "name": col_name,
-            "data_type": config["data_type"],
-            "primary_key": str_to_bool(config["primary_key"]),
-            "required": str_to_bool(config["required"]),
+            "data_type": data_type,
+            "primary_key": str_to_bool(primary_key),
+            "required": str_to_bool(required),
         }
     return schema
 
 
 def update_nan_stats(
-    nan_stats: dict[str, Any], description: str, df: pd.DataFrame
+    nan_stats: list[dict[str, Any]], stage: int, description: str, df: pd.DataFrame
 ) -> None:
     first_time = not df.columns[-1].endswith("_cleaned")
     for col_name in df.columns:
         if first_time:
             # first time
-            nan_stats[col_name] = {"description": description,  "NaNs": df[col_name].isna().sum()}
+            stats = {
+                "col_name": col_name,
+                "stage": stage,
+                "description": description,
+                "NaNs": df[col_name].isna().sum(),
+            }
+            nan_stats.append(stats)
         else:
             # ignore orginal columns
             if col_name.endswith("_cleaned"):
                 original_col = "_".join(col_name.split("_")[:-1])
-                nan_stats[original_col]. = {"description": description,  "NaNs": df[col_name].isna().sum()}
+                stats = {
+                    "col_name": original_col,
+                    "stage": stage,
+                    "description": description,
+                    "NaNs": df[col_name].isna().sum(),
+                }
+                nan_stats.append(stats)
 
-def log_nan_stats(table_name: str, nan_stats: dict[str, Any], logger: Logger) -> None:
-    logger.info(f"Summary of NaNs for *** {table_name} ***")
-    log_str = ""
-    for col_name, stats in nan_stats.items():
-        log_str = f"\ncolumn | "
-        for description in stats.keys():
-            log_str += f"{description} | "
-        log_str += f"\n{col_name}"
-        for value in stats.values():
-            log_str += f"{value} | "
-    logger.info(log_str)
+
+def log_nan_stats(
+    table_name: str,
+    col_names: list[str],
+    nan_stats: list[dict[str, Any]],
+    logger: Logger,
+) -> None:
+    col_order = {col_name: i for i, col_name in enumerate(col_names)}
+    stats_sorted = sorted(
+        nan_stats, key=lambda d: (col_order[d["col_name"]], d["stage"])
+    )
+
+    df_stats = pd.DataFrame(nan_stats)
+    summary = (
+        df_stats.pivot(index="col_name", columns="stage", values="NaNs")
+        .rename(
+            columns={
+                1: "after_loading",
+                2: "after_cleaning",
+                3: "after_transforming",
+                4: "after_validation",
+            }
+        )
+        .reset_index()
+    )
+    logger.info(
+        f"\nSummary of NaNs for *** {table_name} ***\n{summary.to_string(index=False)}"
+    )
 
 
 def run_etl(config: Dict[str, Any], context: Dict[str, Any]) -> None:
@@ -82,51 +117,66 @@ def run_etl(config: Dict[str, Any], context: Dict[str, Any]) -> None:
     context (dict[str, Any]): run time context used by all units
     """
     logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Start ETL pipeline for {config["source"]["file"]}")
-
-    # get local from context
-    # locale = context["locale"]
+    logger.info(f"Start ETL pipeline for '{config["source"]["file"]}'")
 
     tables = dict()
     schema = dict()
 
+    # validate schema per table, and fail on any errors
+    for table_name, mapping in config["mappings"].items():
+        schema[table_name] = validate_schema(config["columns"][table_name])
+
     # go through table by table
     for table_name, mapping in config["mappings"].items():
         # Step 1: extract sheet
+        col_configs = config.get("columns", None)
+        if col_configs is None:
+            raise ValueError("Columns not set up")
+        table_cols = col_configs.get(table_name, None)
+        if table_cols is None:
+            raise ValueError(f"Columns not set up for {table_name}")
         df = extractor.load_excel(
             config["source"],
             table_name,
             mapping["sheet_name"],
-            config["columns"][table_name],
+            table_cols,
             context,
         )
+        # Step 2: add table name attribute to df for logging purposes
+        df.table_name = table_name
 
-        # keeps track of number of NaN/NaT
-        nan_stats = dict()
-        update_nan_stats(nan_stats, "After loading", df)
-        # Step 2: clean
+        # Step 3: rename all the columns to the sql column names specified in the yaml file
+        rename_map = {
+            cfg["source_column"]: col_name for col_name, cfg in table_cols.items()
+        }
+        df = df.rename(columns=rename_map)
+
+        # Step 4: keep track of number of NaN/NaT
+        nan_stats: list[dict[str, Any]] = []
+        update_nan_stats(nan_stats, 1, "After loading", df)
+
+        # Step 5: clean
         df = cleaner.clean_data(
             df, config["cleaning"], config["columns"][table_name], context
         )
-        update_nan_stats(nan_stats, "After cleaning", df)
+        update_nan_stats(nan_stats, 2, "After cleaning", df)
 
-        # Step 3: transform
+        # Step 6: transform
         df = transformer.transform_data(df, config["columns"][table_name], context)
-        update_nan_stats(nan_stats, "After transforming", df)
+        update_nan_stats(nan_stats, 3, "After transforming", df)
 
-        # Step 4: validate
+        # Step 7: validate
         df = validator.validate_data(df, config["columns"][table_name], context)
-        update_nan_stats(nan_stats, "After validation", df)
+        update_nan_stats(nan_stats, 4, "After validation", df)
 
-        # log NaN summary
-        log_nan_stats(table_name, nan_stats, logger)
+        # Step 8: log NaN summary
+        log_nan_stats(table_name, df.columns, nan_stats, logger)
 
-        # Step 4: add to tables dict
+        # Step 9: add df to tables dict
         tables[table_name] = df
-        schema[table_name] = config_to_schema(config["columns"][table_name])
 
-    # Step 6: validate foreign keys
+    # Step 10: validate foreign keys
     df = validator.validate_foreign_keys(config["columns"], tables, context)
 
-    # Step 7: load
+    # Step 11: load
     sql_writer.load_to_sql(config["target"], tables, schema, context)

@@ -44,7 +44,7 @@ def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
 
             if not mask.any():
                 logger.info(f"No transformed values for {original_col}")
-            else:    
+            else:
                 for idx in df.index[mask]:
                     logger.info(
                         f"{original_col} | Row {idx} | "
@@ -52,7 +52,9 @@ def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
                     )
 
 
-def normalise_phone_numbers(series: pd.Series) -> pd.Series:
+def normalise_phone_numbers(
+    series: pd.Series, allow_local: bool, dialling_code: str
+) -> pd.Series:
     s = series.astype("string")
 
     # remove spaces, dashes, brackets
@@ -61,6 +63,10 @@ def normalise_phone_numbers(series: pd.Series) -> pd.Series:
     # convert 00 prefix to +
     s = s.str.replace(r"^00", "+", regex=True)
 
+    # if allow local numbers, normalise with dialling code if needed
+    if allow_local:
+        needs_country = ~s.str.startswith("+") & s.notna()
+        s = s.where(~needs_country, dialling_code + s)
     return s
 
 
@@ -69,7 +75,7 @@ def apply_derived_column(
     target_col: str,
     formula: str,
     depends_on: list[str],
-    logger: Logger
+    logger: Logger,
 ) -> pd.DataFrame:
     """
     Applies a vectorised derived column safely using pandas eval,
@@ -106,7 +112,6 @@ def transform_data(
     """Use mapping configuration to transform the data"""
 
     # save attributes to reset later
-    file_name = df.file_name
     table_name = df.table_name
 
     # log start of transformation
@@ -117,6 +122,9 @@ def transform_data(
     normalised_cols = []
 
     for col_name, config in columns_config.items():
+        # log
+        logger.info(f"Transforming column {col_name}")
+
         # set up
         cleaned_col = col_name + "_cleaned"
         normalised_col = col_name + "_normalised"
@@ -147,7 +155,11 @@ def transform_data(
                 and validation_config.get("format", "") == "E.164"
             ):
                 normalised_cols.append(normalised_col)
-                df[normalised_col] = normalise_phone_numbers(df[cleaned_col])
+                dialling_prefix = validation_config.get("dialling_prefix", "")
+                allow_local = validation_config.get("allow_local", False)
+                df[normalised_col] = normalise_phone_numbers(
+                    df[cleaned_col], allow_local, dialling_prefix
+                )
 
             # check derived columns
             derived_config = validation_config.get("derived_from", None)
@@ -161,7 +173,7 @@ def transform_data(
                         target_col=normalised_col,
                         formula=formula,
                         depends_on=depends_on,
-                        logger=logger
+                        logger=logger,
                     )
 
     if len(normalised_cols) > 0:
@@ -175,7 +187,6 @@ def transform_data(
             df.drop(columns=[col], inplace=True)
 
     # reset the attributes
-    df.file_name = file_name
     df.table_name = table_name
 
     # return the dataframe

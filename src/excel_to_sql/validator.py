@@ -25,6 +25,7 @@ __date__ = "2026-02-19"
 
 
 from typing import Any
+import regex
 import pandas as pd
 from pandas import DataFrame
 from pandas.api.types import is_datetime64_any_dtype, is_numeric_dtype, is_string_dtype
@@ -41,6 +42,7 @@ class Severity(IntEnum):
     WARN = auto()
     FAIL = auto()
     DROP = auto()
+
 
 class ValidationMode(IntEnum):
     STRICT = auto()
@@ -112,21 +114,29 @@ def validate_column_len(value_str: str, sql_type: str) -> bool:
 
     return lengths <= limit
 
-def str_to_severity(severity : str) -> Severity:
+
+def str_to_severity(severity: str) -> Severity:
     if severity == "drop":
         return Severity.DROP
     elif severity == "warn":
         return Severity.WARN
     else:
         return Severity.FAIL
-    
+
+
 def str_to_validation_mode(validation_mode: str) -> ValidationMode:
     if validation_mode.strip().lower() == "strict":
         return ValidationMode.STRICT
     else:
-        return ValidationMode.PERMISSIVE    
+        return ValidationMode.PERMISSIVE
 
-def action_validations(results : ValidationResult, validation_mode: ValidationMode, df: pd.DataFrame | None, logger: Logger) -> None:
+
+def action_validations(
+    results: ValidationResult,
+    validation_mode: ValidationMode,
+    df: pd.DataFrame | None,
+    logger: Logger,
+) -> None:
     # first list all fails and warning, then apply validation_mode and column on_error
     if results.has_severity(Severity.FAIL):
         # log fails
@@ -140,9 +150,7 @@ def action_validations(results : ValidationResult, validation_mode: ValidationMo
             issue_str = f"col={issue.column}, rows={issue.rows}, msg={issue.msg}"
             logger.warning(issue_str)
 
-    if validation_mode == ValidationMode.STRICT and results.has_severity(
-        Severity.FAIL
-    ):
+    if validation_mode == ValidationMode.STRICT and results.has_severity(Severity.FAIL):
         # strict mode means any errors cause exception
         raise ValueError(f"ETL pipeline validation failed")
     if df is not None and results.has_severity(Severity.DROP):
@@ -151,6 +159,7 @@ def action_validations(results : ValidationResult, validation_mode: ValidationMo
             logger.warning(f"Dropped rows {results.rows_to_drop}")
             df = df.drop(index=results.rows_to_drop)
 
+
 def validate_data(
     df: DataFrame,
     columns_config: dict[str, Any],
@@ -158,7 +167,6 @@ def validate_data(
 ) -> DataFrame:
     """Global and per-column validations"""
     # save attributes
-    file_name = df.file_name
     table_name = df.table_name
 
     # log start
@@ -169,11 +177,14 @@ def validate_data(
     validation_mode = str_to_validation_mode(context["validation_mode"])
     # set up
     results = ValidationResult()
-    PATTERNS = {
-        "person_name": r"^\p{L}+(?:[ '-]\p{L}+)*$",
-        "phone": r"\+\d{8,15}",
-        "product_name": r"^[\p{L}\p{N}./()]+(?:[ '-][\p{L}\p{N}./()]+)*$",
-        "email_address": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$",
+    patterns = {
+        "person_name": regex.compile(r"^\p{L}+(?:[ '-]\p{L}+)*$"),
+        # international phone number validation
+        "E.164": regex.compile(r"\+\d{8,15}"),
+        "product_name": regex.compile(
+            r"^[\p{L}\p{N}./()]+(?:[ '-][\p{L}\p{N}./()]+)*$"
+        ),
+        "email": regex.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"),
     }
 
     # get validation rules
@@ -181,6 +192,9 @@ def validate_data(
 
     # loop through columns
     for col_name, config in columns_config.items():
+        # log
+        logger.info(f"Validating column {col_name}")
+
         # get the validation configuration
         validation_config = config.get("validation", None)
 
@@ -198,19 +212,13 @@ def validate_data(
 
         # missing required or primary key columns
         mask_missing = None
-        if (
-            config.get("required", False)
-            or config.get("primary_key", False)
-        ):
+        if config.get("required", False) or config.get("primary_key", False):
             if col_name not in df.columns:
                 results.add_issue(col_name, [], on_error, "Required column missing")
                 continue
 
         # empty primary key columns or non-nullable columns
-        if (
-            validation_config.get("nullable", True)
-            or config.get("primary_key", False)
-        ):
+        if not validation_config.get("nullable", True) or config.get("primary_key", False):
             mask_missing = df[col_name].isna()
 
             # If string column, also check empty values
@@ -245,7 +253,7 @@ def validate_data(
             # check string length
             sql_type = config.get("data_type", None)
             if sql_type is not None:
-                sql_type = sql_type.strip().aslower()
+                sql_type = sql_type.strip().lower()
                 mask_invalid = (
                     ~df[cleaned_col]
                     .astype("string")
@@ -253,7 +261,7 @@ def validate_data(
                         validate_column_len,
                         sql_type=sql_type,
                     )
-            )
+                )
             if mask_invalid is not None:
                 invalid_rows = df.loc[mask_invalid, cleaned_col]
                 for row in invalid_rows.index:
@@ -265,19 +273,19 @@ def validate_data(
                     )
 
             # check string format
-            pattern = validation_config.get("format", None)
-            if pattern is not None:
-                validation_format = f"Invalid {pattern}"
-                if pattern == "email" and config.get("check_deliverability", False):
+            format = validation_config.get("format", None)
+            if format is not None:
+                pattern = patterns[format]
+                validation_format = f"Invalid {format}"
+                if format == "email" and config.get("check_deliverability", False):
                     mask_invalid = (
                         ~df[cleaned_col]
                         .astype("string")
                         .apply(safe_validate_email, check_deliverability=True)
                     )
                 else:
-                    mask_invalid = (
-                        ~df[cleaned_col].astype("string").str.fullmatch(pat=pattern)
-                    )
+                    s = df[cleaned_col].astype("string").astype(object)
+                    mask_invalid = ~s.apply(lambda v: bool(pattern.fullmatch(v)))
         else:  # int | float | date | datetime
             mask_invalid = pd.Series(False, index=df.index)
             # check against min and max
@@ -286,7 +294,7 @@ def validate_data(
             if is_datetime64_any_dtype(df[col_name]):
                 if min_val is not None and min_val == "today":
                     min_val = context["run_date"]
-                if  max_val is not None and max_val == "today":
+                if max_val is not None and max_val == "today":
                     max_val = context["run_date"]
 
             if max_val is not None:
@@ -307,16 +315,20 @@ def validate_data(
                     f"{validation_format}: {invalid_rows[row]}",
                 )
 
-        action_validations(results, validation_mode, df, logger)
+    action_validations(results, validation_mode, df, logger)
 
     # set up attributes up again
-    df.file_name = file_name
     df.table_name = table_name
 
     # return dataframe
     return df
 
-def validate_foreign_keys(columns_config: dict[str, Any], tables: dict[str, pd.DataFrame], context: dict[str, Any]) -> None:
+
+def validate_foreign_keys(
+    columns_config: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+    context: dict[str, Any],
+) -> None:
     # setup logger
     logger = logging_setup.get_logger(context, __name__ + "_foreign")
     logger.info(f"Validating foreign keys")
@@ -330,9 +342,9 @@ def validate_foreign_keys(columns_config: dict[str, Any], tables: dict[str, pd.D
             logger.warning(f"No columns set up for {table_name}")
             continue
 
-        # check foreign keys per table    
+        # check foreign keys per table
         for col_name, col_config in cols_config.items():
-            # check columns for foreign keys, and check    
+            # check columns for foreign keys, and check
             validation_config = col_config.get("validation", None)
             on_error = str_to_severity(validation_config.get("on_error", "fail"))
             if validation_config is not None:
@@ -341,22 +353,46 @@ def validate_foreign_keys(columns_config: dict[str, Any], tables: dict[str, pd.D
                 if foreign_key is not None:
                     # has the foreign key been specified correctly?
                     if isinstance(foreign_key, str):
-                        foreign_table, foreign_col = str(foreign_key).strip().lower().split(".")
+                        foreign_table, foreign_col = (
+                            str(foreign_key).strip().lower().split(".")
+                        )
                         if not foreign_table in columns_config.keys():
-                            results.add_issue(col_name, [], on_error, f"Foreign key table {foreign_table} not found")
+                            results.add_issue(
+                                col_name,
+                                [],
+                                on_error,
+                                f"Foreign key table {foreign_table} not found",
+                            )
                             continue
                         if not foreign_col in columns_config[foreign_table]:
-                            results.add_issue(col_name, [], on_error, f"Foreign key column {foreign_col} not found")
+                            results.add_issue(
+                                col_name,
+                                [],
+                                on_error,
+                                f"Foreign key column {foreign_col} not found",
+                            )
                             continue
                         # check that the values in the foreign key exist in the table/foreign column
-                        valid_targets = tables[foreign_table][foreign_col].dropna().unique()
+                        valid_targets = (
+                            tables[foreign_table][foreign_col].dropna().unique()
+                        )
                         mask_valid = tables[table_name][col_name].isin(valid_targets)
                         invalid_rows = tables[table_name][~mask_valid]
-                        results.add_issue(col_name, invalid_rows, on_error, f"Invalid foreign key values")
+                        results.add_issue(
+                            col_name,
+                            invalid_rows,
+                            on_error,
+                            f"Invalid foreign key values",
+                        )
                     else:
-                        results.add_issue(col_name, [], on_error, f"Foreign key {foreign_key} must be in format table_name.column_name")
+                        results.add_issue(
+                            col_name,
+                            [],
+                            on_error,
+                            f"Foreign key {foreign_key} must be in format table_name.column_name",
+                        )
                 break
             else:
                 logger.info(f"No validation set up for {table_name}")
-                continue # to the next column
+                continue  # to the next column
     action_validations(results, ValidationMode.STRICT, None, logger)

@@ -42,7 +42,7 @@ cleaning:
     standardise_nulls: true
     remove_blank_rows: true
     day_first_format: true
-    currency_symbol: "R"
+    currency_symbol: R
 
 #-----------------------#
 # Sheet → table mapping #
@@ -115,10 +115,12 @@ columns:
 
         mobile:
             source_column: mobile
-            data_type: varchar(10)
+            data_type: varchar(20)
             required: true
             validation:
                 format: E.164
+                allow_local: true
+                dialling_prefix: "+27"
 
         city:
             source_column: city

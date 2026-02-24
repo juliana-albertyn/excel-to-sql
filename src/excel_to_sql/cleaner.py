@@ -145,7 +145,6 @@ def clean_data(
     """Clean data using cleaning rules from yaml."""
 
     # save df attributes coming in, because you loose them when a dataframe is copied
-    file_name = df.file_name
     table_name = df.table_name
 
     # do automatic convert of data types e.g. object -> str
@@ -154,28 +153,21 @@ def clean_data(
     # log before info
     logger = logging_setup.get_logger(context, __name__)
     logger.info(f"Cleaning data for *** {table_name} ***. Shape: {df.shape}")
-    NANs_before = f"{df.isna().sum()}"
-
-    # rename all the columns to the sql column names specified in the yaml file
-    rename_map = {
-        config["source_column"]: sql_col for sql_col, config in column_config.items()
-    }
-    df = df.rename(columns=rename_map)
 
     # global cleaning rules
     if cleaning_rules.get("trim_whitespace", False):
         df = trim_whitespace(df)
-        logger.info(f"Trimmed whitespace for {table_name}")
+        logger.info(f"Trimmed whitespace for *** {table_name} ***")
 
     if cleaning_rules.get("standardise_nulls", False):
         df = standardise_nulls(df)
-        logger.info(f"Standardised nulls for {table_name}")
+        logger.info(f"Standardised nulls for *** {table_name} ***")
 
     if cleaning_rules.get("remove_blank_rows", False):
         empty_rows, _ = df[df.isna().all(axis=1)].shape
         if empty_rows > 0:
             df = remove_empty_rows(df)
-            logger.info(f"Removed {empty_rows} empty rows for {table_name}")
+            logger.info(f"Removed {empty_rows} empty rows for *** {table_name} ***")
 
     currency_symbol = cleaning_rules.get("currency_symbol", "")
     day_first_format = cleaning_rules.get("day_first_format", True)
@@ -183,7 +175,7 @@ def clean_data(
     # configuration for all columns in a table/worksheet are passed in
     for col_name, col_config in column_config.items():
         cleaned_col = f"{col_name}_cleaned"
-        logger.info(f"Processing column: {col_name}->{cleaned_col}")
+        logger.info(f"Cleaning column: {col_name}->{cleaned_col}")
         # data type - required
         dtype = col_config.get("data_type", "").lower()
         dtype = dtype.split("(", 1)[0].strip()  # cater for varchar(10)
@@ -245,12 +237,7 @@ def clean_data(
                 "ETL Pipeline does not cater for {table_name}/{col_name}: data type {dtype}"
             )
 
-    # log shape and NaN after cleaning
-    logger.info("=== After cleaning data ===")
-    logger.info(f"\nNumber of NaN/NaT:\n{df.isna().sum()}")
-
     # set df attributes back to saved values, because you loose them when a dataframe is copied
-    df.file_name = file_name
     df.table_name = table_name
 
     # log only cleaned columns

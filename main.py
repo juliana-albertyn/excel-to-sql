@@ -28,9 +28,14 @@ with open(config_file) as f:
 # Get current datetime once
 now = datetime.now()
 
+input_file = ""
+input = cfg.get("source", None)
+if input is not None:
+    input_file = input.get("file", None)
+
 context = {
     "project_name": cfg.get("project_name", "excel_to_sql"),
-    "locale": cfg["source"].get("localisation", "en_ZA"),
+    "input_file": input_file,
     "environment": "development",
     "validation_mode": cfg.get("validation_mode", "strict"),
     "data_dir": Path(project_root / cfg.get("data_dir", "")),
@@ -47,8 +52,12 @@ context = {
 logger = logging_setup.get_logger(context, "main")
 logger.info("Loading ETL pipeline configuration")
 
-# load configuration
+# first sanity check
+if input_file is None:
+    logger.error("Input file not specified in pipeline_config.yaml")
+    raise ValueError("Input file not specified in pipeline_config.yaml")
 
+# load configuration
 source_config = cfg["source"]
 cleaning_rules = cfg["cleaning"]
 mapping_config = cfg["mappings"]
