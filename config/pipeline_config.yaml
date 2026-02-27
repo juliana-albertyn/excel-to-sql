@@ -1,12 +1,6 @@
 # excel_to_sql project configuration
 # sql first configuation
 
-#-------#
-# Paths #
-#-------#
-# Path to raw data (relative to project root)
-data_dir: ./data/raw
-
 #---------------#
 # Global config #
 #---------------#
@@ -81,6 +75,9 @@ mappings:
 #--------------#
 # Column rules #
 #--------------#
+# NOTE: 
+# required means that the column must be present in the spreadsheet
+# nullable means the column does not have to have a value
 
 columns:
     customers:
@@ -89,6 +86,7 @@ columns:
             data_type: int
             primary_key: true
             required: true
+            nullable: false
             validation:
                 min_value: 1
 
@@ -97,9 +95,9 @@ columns:
             data_type: varchar(50)
             case: title # options: lower, upper, title, asis
             required: true
+            nullable: true
             validation:
                 format: person_name
-                nullable: true
                 on_error: warn # fail | drop | warn
 
         email:
@@ -107,9 +105,9 @@ columns:
             data_type: varchar(255)
             case: lower # options: lower, upper, title, asis
             required: true
+            nullable: false
             validation:
                 format: email
-                nullable: true
                 check_deliverability: false
                 on_error: warn # fail | drop | warn
 
@@ -117,6 +115,7 @@ columns:
             source_column: mobile
             data_type: varchar(20)
             required: true
+            nullable: false
             validation:
                 format: E.164
                 allow_local: true
@@ -127,10 +126,12 @@ columns:
             data_type: varchar(30)
             case: title # options: lower, upper, title, asis
             required: true
+            nullable: true
 
         join_date:
             source_column: join_date
             data_type: date
+            nullable: true
             validation:
                 min_value: 1900-01-01
                 max_value: today
@@ -141,6 +142,7 @@ columns:
             data_type: int
             primary_key: true
             required: true
+            nullable: false
             validation:
                 min_value: 1001
 
@@ -149,25 +151,26 @@ columns:
             data_type: varchar(50)
             case: title # options: lower, upper, title, asis
             required: true
+            nullable: false
             validation:
                 format: product_name
-                nullable: true
                 on_error: fail # fail | drop | warn
 
         product_price:
             source_column: product_price
             data_type: money
             required: true
+            nullable: false
             validation:
                 min_value: 1
                 max_value: 1000000
-                nullable: true
                 on_error: fail # fail | drop | warn
 
         stock_quantity:
             source_column: stock_quantity
             data_type: int
             required: true
+            nullable: true
             validation:
                 min_value: 0
                 max_value: 1000000
@@ -178,6 +181,7 @@ columns:
             data_type: int
             primary_key: true
             required: true
+            nullable: false
             validation:
                 min_value: 100
 
@@ -185,24 +189,24 @@ columns:
             source_column: customer_id
             data_type: int
             required: true
-            validation:
-                foreign_key: customers.customer_id
-                nullable: false
+            foreign_key: customers.customer_id
+            nullable: false
 
         order_date:
             source_column: order_date
             data_type: date
             required: true
+            nullable: false
             validation:
                 min_value: 1900-01-01
                 max_value: today
-                nullable: true
                 on_error: warn # fail | drop | warn
 
         order_status:
             source_column: status
             data_type: varchar(10)
             required: true
+            nullable: true
             value_mapping:
                 completed:
                     - c
@@ -215,35 +219,34 @@ columns:
                 cancelled:
                     - x
                     - cancelled
-            validation: nullable = true
 
     order_items:
         order_item_id:
             source_column: order_item_id
             data_type: int
             primary_key: true
+            nullable: false
             required: true
 
         order_id:
             source_column: order_id
             data_type: int
             required: true
-            validation:
-                foreign_key: orders.
-                nullable: false
+            nullable: false
+            foreign_key: orders.
 
         product_id:
             source_column: product_id
             data_type: int
             required: true
-            validation:
-                foreign_key: products.product_id
-                nullable: false
+            nullable: false
+            foreign_key: products.product_id
 
         quantity:
             source_column: quantity
             data_type: int
             required: true
+            nullable: false
             validation:
                 min_value: 1
                 max_value: 1000000
@@ -253,6 +256,7 @@ columns:
             source_column: unit_price
             data_type: money
             required: true
+            nullable: false
             validation:
                 min_value: 1
                 max_value: 1000000.00
@@ -261,6 +265,7 @@ columns:
         total_price:
             source_column: total_price
             data_type: money
+            nullable: true
             validation:
                 derived_from:
                     formula: "quantity * unit_price"

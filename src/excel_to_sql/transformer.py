@@ -107,12 +107,12 @@ def apply_derived_column(
 
 
 def transform_data(
-    df: DataFrame, columns_config: dict[str, Any], context: dict[str, Any]
+    df: DataFrame,
+    table_name: str,
+    columns_config: dict[str, Any],
+    context: dict[str, Any],
 ) -> DataFrame:
     """Use mapping configuration to transform the data"""
-
-    # save attributes to reset later
-    table_name = df.table_name
 
     # log start of transformation
     logger = logging_setup.get_logger(context, __name__)
@@ -185,9 +185,6 @@ def transform_data(
             cleaned_col = col.replace("_normalised", "_cleaned")
             df[cleaned_col] = df[col]
             df.drop(columns=[col], inplace=True)
-
-    # reset the attributes
-    df.table_name = table_name
 
     # return the dataframe
     return df

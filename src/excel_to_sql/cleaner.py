@@ -139,14 +139,11 @@ def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
 def clean_data(
     df: DataFrame,
     cleaning_rules: dict[str, Any],
+    table_name: str,
     column_config: dict[str, Any],
     context: dict[str, Any],
 ) -> pd.DataFrame:
     """Clean data using cleaning rules from yaml."""
-
-    # save df attributes coming in, because you loose them when a dataframe is copied
-    table_name = df.table_name
-
     # do automatic convert of data types e.g. object -> str
     df = df.convert_dtypes()
 
@@ -236,9 +233,6 @@ def clean_data(
             logger.error(
                 "ETL Pipeline does not cater for {table_name}/{col_name}: data type {dtype}"
             )
-
-    # set df attributes back to saved values, because you loose them when a dataframe is copied
-    df.table_name = table_name
 
     # log only cleaned columns
     log_column_changes(df, logger)
