@@ -12,3 +12,11 @@ log_dir: /logs
 #---------------#
 project_name: excel_to_sql
 config_file: pipeline_config.yaml
+
+#----------------#
+# Output settings #
+#----------------#
+write_sql: true
+exports:
+  - csv
+  - excel

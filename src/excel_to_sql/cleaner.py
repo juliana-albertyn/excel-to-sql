@@ -25,7 +25,6 @@ __date__ = "2026-02-08"
 from typing import Any, Optional
 import pandas as pd
 from pandas import DataFrame
-import numpy as np
 from datetime import date, datetime
 from logging import Logger
 
@@ -117,21 +116,34 @@ def remove_empty_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df.dropna(how="all")
 
 
-def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
+def log_column_changes(
+    df: pd.DataFrame, table_name, context: dict[str, Any], logger: Logger
+) -> None:
     """log only changed values per table"""
-    logger.info(f"Audit of cleaned values for *** {df.table_name} ***:")
+    logger.info(f"Audit of cleaned values for *** {table_name} ***:")
+    cleaned_suffix = context.get("cleaned_suffix", "")
+    # get the row offset from the context
+    row_offset = context.get("row_offset", 1)
+
     for col in df.columns:
         if col.endswith("_cleaned"):
-            original_col = col.replace("_cleaned", "")
+            original_col = col.replace(cleaned_suffix, "")
 
-            mask = df[original_col].astype("string").ne(df[col].astype("string"))
+            left_num = pd.to_numeric(df[original_col], errors="coerce")
+            right_num = pd.to_numeric(df[col], errors="coerce")
+
+            numeric_diff = left_num.ne(right_num)
+
+            string_diff = df[original_col].astype("string").ne(df[col].astype("string"))
+
+            mask = numeric_diff & string_diff
 
             if not mask.any():
                 logger.info(f"No cleaned values for column {original_col}")
             else:
                 for idx in df.index[mask]:
                     logger.info(
-                        f"{original_col} | Row {idx} | "
+                        f"{original_col} | Row {idx + row_offset} | "
                         f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
                     )
 
@@ -150,6 +162,7 @@ def clean_data(
     # log before info
     logger = logging_setup.get_logger(context, __name__)
     logger.info(f"Cleaning data for *** {table_name} ***. Shape: {df.shape}")
+    cleaned_suffix = context.get("cleaned_suffix", "")
 
     # global cleaning rules
     if cleaning_rules.get("trim_whitespace", False):
@@ -171,10 +184,10 @@ def clean_data(
 
     # configuration for all columns in a table/worksheet are passed in
     for col_name, col_config in column_config.items():
-        cleaned_col = f"{col_name}_cleaned"
+        cleaned_col = f"{col_name}{cleaned_suffix}"
         logger.info(f"Cleaning column: {col_name}->{cleaned_col}")
         # data type - required
-        dtype = col_config.get("data_type", "").lower()
+        dtype = col_config.get("data_type", "")
         dtype = dtype.split("(", 1)[0].strip()  # cater for varchar(10)
         if dtype == "":
             logger.error(f"Data type not specified for {col_name}")
@@ -219,22 +232,16 @@ def clean_data(
             df.loc[mask, cleaned_col] = df.loc[mask, col_name].apply(
                 str_to_iso_date, day_first_format=day_first_format
             )
-        elif dtype in ["smallmoney", "money"]:
-            # currency
-            df[cleaned_col].astype(str).str.replace(
-                currency_symbol, "", regex=False
-            ).str.strip()
-            df[cleaned_col] = pd.to_numeric(df[col_name], errors="coerce")
-        elif dtype in ["tinyint", "smallint", "int", "bigint"]:
-            df[cleaned_col] = pd.to_numeric(df[col_name], errors="coerce")
-        elif dtype in ["float", "real", "decimal", "numeric"]:
-            df[cleaned_col] = pd.to_numeric(df[col_name], errors="coerce")
         else:
-            logger.error(
-                "ETL Pipeline does not cater for {table_name}/{col_name}: data type {dtype}"
-            )
+            df[cleaned_col] = df[col_name]
+            if dtype in ["smallmoney", "money"]:
+                # currency
+                df[cleaned_col] = df[cleaned_col].astype(str).str.replace(
+                    currency_symbol, "", regex=False
+                ).str.strip()
+            df[cleaned_col] = pd.to_numeric(df[cleaned_col], errors="coerce")
 
     # log only cleaned columns
-    log_column_changes(df, logger)
+    log_column_changes(df, table_name, context, logger)
 
     return df

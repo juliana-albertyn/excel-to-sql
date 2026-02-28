@@ -11,7 +11,7 @@ validation_mode: strict # strict | permissive
 source:
     type: excel
     file: messy_orders.xlsx
-    header_row: 0
+    header_row: 1
 
 target:
     db_type: mssql
@@ -200,7 +200,7 @@ columns:
             validation:
                 min_value: 1900-01-01
                 max_value: today
-                on_error: warn # fail | drop | warn
+                on_error: fail # fail | drop | warn
 
         order_status:
             source_column: status
@@ -233,7 +233,7 @@ columns:
             data_type: int
             required: true
             nullable: false
-            foreign_key: orders.
+            foreign_key: orders.order_id
 
         product_id:
             source_column: product_id

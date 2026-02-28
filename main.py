@@ -9,10 +9,6 @@ __author__ = "Juliana Albertyn"
 __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-02-17"
 
-import yaml
-from pathlib import Path
-from datetime import datetime
-
 from src.excel_to_sql import pipeline
 
 try:

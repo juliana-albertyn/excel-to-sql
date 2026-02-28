@@ -32,9 +32,8 @@ def get_logger(context: Dict, name: str) -> logging.Logger:
     log_dir = context.get("log_dir", "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_level = context.get("log_level", "INFO")
-    log_format = context.get(
-        "log_format", "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
     max_logs = context.get("max_logs", 10)  # keep last 10 logs by default
 
     # Timestamped log file
@@ -50,7 +49,7 @@ def get_logger(context: Dict, name: str) -> logging.Logger:
 
     # Avoid adding handlers multiple times
     if not logger.handlers:
-        formatter = logging.Formatter(log_format)
+        formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
         # File handler
         file_handler = logging.FileHandler(log_file)
