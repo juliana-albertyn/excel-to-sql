@@ -33,9 +33,14 @@ from logging import Logger
 import src.excel_to_sql.logging_setup as logging_setup
 
 
-def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
+def log_column_changes(
+    df: pd.DataFrame, table_name: str, context: dict[str, Any], logger: Logger
+) -> None:
     """log only changed values per table"""
-    logger.info(f"Audit of transformed values for *** {df.table_name} ***:")
+    logger.info(f"Audit of transformed values for *** {table_name} ***:")
+    # get the row offset from the context
+    row_offset = context.get("row_offset", 1)
+
     for col in df.columns:
         if col.endswith("_normalised"):
             original_col = col.replace("_normalised", "")
@@ -47,7 +52,7 @@ def log_column_changes(df: pd.DataFrame, logger: Logger) -> None:
             else:
                 for idx in df.index[mask]:
                     logger.info(
-                        f"{original_col} | Row {idx} | "
+                        f"{original_col} | Row {idx + row_offset} | "
                         f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
                     )
 
@@ -75,33 +80,41 @@ def apply_derived_column(
     target_col: str,
     formula: str,
     depends_on: list[str],
+    context: dict[str, Any],
     logger: Logger,
 ) -> pd.DataFrame:
     """
     Applies a vectorised derived column safely using pandas eval,
     only when all dependencies are present.
     """
-    # Ensure dependencies exist
-    missing_cols = [col for col in depends_on if col not in df.columns]
-    if missing_cols:
-        raise ValueError(
-            f"Cannot compute '{target_col}'. Missing columns: {missing_cols}"
-        )
+    # log
+    logger.info(f"Applying '{formula}' to {target_col}")
+
+    row_offset = context.get("row_offset", 1)
+    original_col = target_col.replace("_normalised", "")
+
+    # use correct colunms for formula
+    cleaned_suffix = context.get("cleaned_suffix", "")
+    depends_on_cleaned = [f"{col}{cleaned_suffix}" for col in depends_on]
+
+    formula_cleaned = formula
+    for idx, col in enumerate(depends_on):
+        formula_cleaned = formula_cleaned.replace(col, depends_on_cleaned[idx])
 
     # Identify rows where dependencies are complete
-    mask_valid = df[depends_on].notna().all(axis=1)
+    mask_valid = df[depends_on_cleaned].notna().all(axis=1)
 
     # Compute only valid rows
     if mask_valid.any():
-        df.loc[mask_valid, target_col] = df.loc[mask_valid].eval(formula)
+        df.loc[mask_valid, target_col] = df.loc[mask_valid].eval(formula_cleaned)
 
     # Set invalid rows to NA
     df.loc[~mask_valid, target_col] = pd.NA
 
     # 5️⃣ Log invalid rows
     if (~mask_valid).any():
-        invalid_indices = df.index[~mask_valid].tolist()
-        logger.warning(f"Cannot compute '{target_col}' for rows: {invalid_indices}")
+        invalid_indices = (df.index[~mask_valid] + row_offset).tolist()
+        logger.warning(f"Cannot compute '{original_col}' for rows: {invalid_indices}")
 
     return df
 
@@ -120,13 +133,14 @@ def transform_data(
 
     # we work only with cleaned columns - keep original data intact
     normalised_cols = []
+    cleaned_suffix = context.get("cleaned_suffix", "")
 
     for col_name, config in columns_config.items():
         # log
         logger.info(f"Transforming column {col_name}")
 
         # set up
-        cleaned_col = col_name + "_cleaned"
+        cleaned_col = f"{col_name}{cleaned_suffix}"
         normalised_col = col_name + "_normalised"
 
         # get the validation config
@@ -163,9 +177,12 @@ def transform_data(
 
             # check derived columns
             derived_config = validation_config.get("derived_from", None)
-            if is_numeric_dtype(df[col_name]) and derived_config is not None:
+            if derived_config is None:
+                continue
+            if is_numeric_dtype(df[cleaned_col]):
                 depends_on = derived_config.get("depends_on", None)
                 formula = derived_config.get("formula", None)
+                # remember to work with cleaned cols
                 if depends_on is not None and formula is not None:
                     normalised_cols.append(normalised_col)
                     df = apply_derived_column(
@@ -173,16 +190,17 @@ def transform_data(
                         target_col=normalised_col,
                         formula=formula,
                         depends_on=depends_on,
+                        context=context,
                         logger=logger,
                     )
 
     if len(normalised_cols) > 0:
         # just log the changed columns
-        log_column_changes(df, logger)
+        log_column_changes(df, table_name, context, logger)
 
         # move the values from normalised columns into the cleaned columns and drop the normalised columns
         for col in normalised_cols:
-            cleaned_col = col.replace("_normalised", "_cleaned")
+            cleaned_col = col.replace("_normalised", cleaned_suffix)
             df[cleaned_col] = df[col]
             df.drop(columns=[col], inplace=True)
 
