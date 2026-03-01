@@ -13,15 +13,16 @@ from typing import Any
 import pandas as pd
 from logging import Logger
 
+
 def to_csv(
     tables: dict[str, pd.DataFrame],
     context: dict[str, Any],
     logger: Logger,
 ) -> None:
     """Writing dataframes to csv files"""
+    output_dir = context.get("output_dir", ".")
+    output_dir.mkdir(parents=True, exist_ok=True)
     for table_name, table in tables.items():
-        output_dir = context.get("output_dir", ".")
-        output_dir.mkdir(parents=True, exist_ok=True)
         csv_name = f"{table_name}.csv"
         csv_path = output_dir / csv_name
         logger.info(f"Writing {table_name} to {csv_path}")
