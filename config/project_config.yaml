@@ -1,12 +1,5 @@
 # excel_to_sql project configuration
 
-#-------#
-# Paths #
-#-------#
-# Path to raw data (relative to project root)
-data_dir: ./data/raw
-log_dir: /logs
-
 #---------------#
 # project config #
 #---------------#

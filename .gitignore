@@ -8,4 +8,7 @@ __pycache__/
 
 # ignore log files
 logs/
-data/raw/.~lock.fake_data.xlsx#
+.vscode/bookmarks.json
+
+# ignore pdfs, only save raw files
+*.pdf

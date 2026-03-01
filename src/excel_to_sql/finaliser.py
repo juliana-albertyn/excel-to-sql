@@ -12,16 +12,24 @@ __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-02-28"
 
 from typing import Any
+import pandas as pd
 from pandas import DataFrame
 from logging import Logger
 
 
 def finalise(
-    dataframes: list[str, DataFrame], context: dict[str, Any], logger: Logger
-) -> None:
+    dataframes: dict[str, DataFrame], context: dict[str, Any], logger: Logger
+) -> dict[str, DataFrame]:
     logger.info("Finalising ETL pipeline")
-    # # Drop original columns
-    # df = df.drop(columns=original_columns)
+    cleaned_suffix = context.get("cleaned_suffix")
+    if cleaned_suffix is not None:
+        for df in dataframes.values():
+            # Drop original columns
+            original_cols = [c for c in df.columns if not c.endswith(cleaned_suffix)]
+            df = df.drop(columns=original_cols)
 
-    # # Rename cleaned columns back to original names
-    # df = df.rename(columns={f"{col}_cleaned": col for col in original_columns})
+            # Rename cleaned columns back to original names
+            df = df.rename(
+                columns={f"{col}{cleaned_suffix}": col for col in original_cols}
+            )
+    return dataframes
