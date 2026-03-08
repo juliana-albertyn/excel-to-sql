@@ -11,7 +11,4 @@ __date__ = "2026-02-17"
 
 from src.excel_to_sql import pipeline
 
-try:
-    pipeline.run_etl()
-except Exception as e:
-    print(f"ETL pipeline error: {e}. Check log files")
+pipeline.run_etl()

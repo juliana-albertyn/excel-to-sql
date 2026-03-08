@@ -26,6 +26,7 @@ import src.excel_to_sql.transformer as transformer
 import src.excel_to_sql.validator as validator
 import src.excel_to_sql.finaliser as finaliser
 import src.excel_to_sql.loader as loader
+import src.excel_to_sql.errors as errors
 
 
 class ETLStages(IntEnum):
@@ -33,7 +34,6 @@ class ETLStages(IntEnum):
     CLEANED = 2
     TRANSFORMED = 3
     VALIDATED = 4
-
 
 def str_to_bool(value: str | bool) -> bool:
     """
@@ -51,7 +51,7 @@ def validate_schema(pipeline_config: Dict[str, Any], logger: Logger) -> dict[str
     Validates the schema, and returns the target schema
 
     Raises:
-    ValueError: Any missing required fields or setups, or any incorrect setups
+    ExtractorError: Any missing required fields or setups, or any incorrect setups
     """
 
     def add_invalid(
@@ -94,7 +94,8 @@ def validate_schema(pipeline_config: Dict[str, Any], logger: Logger) -> dict[str
         "text",
         "nchar",
         "nvarchar",
-        "ntext" "tinyint",
+        "ntext",
+        "tinyint",
         "smallint",
         "int",
         "bigint",
@@ -282,14 +283,17 @@ def validate_schema(pipeline_config: Dict[str, Any], logger: Logger) -> dict[str
                                 f"{desc} Foreign key table {f_table_name} does not exist"
                             )
                         else:
-                            if not f_col_name in f_table_cols:
+                            if f_col_name not in f_table_cols:
                                 invalid_entries.append(
                                     f"{desc} Foreign key column {f_col_name} does not exist in table {f_table_name}"
                                 )
 
     if len(invalid_entries) != 0:
-        logger.error("\n".join(invalid_entries))
-        raise ValueError("Schema incomplete/incorrect")
+        error_context = errors.ErrorContext()
+        err_str = "\n".join(invalid_entries)
+        raise errors.SchemaError(
+            f"\nSchema incomplete/incorrect {err_str}", error_context
+        )
 
     return schema
 
@@ -304,10 +308,13 @@ def update_nan_stats(
     """Update the nan stats summary for a table"""
     cleaned_suffix = context.get("cleaned_suffix")
     if cleaned_suffix is not None:
-        first_time = not df.columns[-1].endswith(cleaned_suffix)
+        first_time = True
+        for col in reversed(df.columns):
+            if col.endswith(cleaned_suffix):
+                first_time = False
+                break
         for col_name in df.columns:
             if first_time:
-                # first time
                 stats = {
                     "col_name": col_name,
                     "stage": stage,
@@ -335,11 +342,6 @@ def log_nan_stats(
     logger: Logger,
 ) -> None:
     """Log the summary nan stats per table"""
-    col_order = {col_name: i for i, col_name in enumerate(col_names)}
-    stats_sorted = sorted(
-        nan_stats, key=lambda d: (col_order[d["col_name"]], d["stage"])
-    )
-
     df_stats = pd.DataFrame(nan_stats)
     summary = (
         df_stats.pivot(index="col_name", columns="stage", values="NaNs")
@@ -374,183 +376,207 @@ def load_pipeline_config(
     project_config: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
     """Load the pipeline configuration specified in the project configuration file"""
-    pipeline_config_file = project_config.get("config_file", None)
+    pipeline_config_file = project_config.get("config_file")
     if pipeline_config_file is None:
-        raise ValueError("Pipeline configuration file not specified")
+        error_context = errors.ErrorContext()
+        raise errors.ConfigError(
+            "Pipeline configuration file not specified", error_context
+        )
+    try:
+        # open the pipeline configuration file
+        pipeline_config_file = context["config_dir"] / pipeline_config_file
+        with open(pipeline_config_file) as f:
+            raw_pipeline_config = yaml.safe_load(f)
+        pipeline_config = lower_keys(raw_pipeline_config)
 
-    # open the pipeline configuration file
-    pipeline_config_file = context["config_dir"] / pipeline_config_file
-    with open(pipeline_config_file) as f:
-        raw_pipeline_config = yaml.safe_load(f)
-    pipeline_config = lower_keys(raw_pipeline_config)
+        # load configurations
+        source_config = pipeline_config["source"]
+        target_config = pipeline_config["target"]
+        cleaning_rules = pipeline_config["cleaning"]
+        mapping_config = pipeline_config["mappings"]
+        columns_config = pipeline_config["columns"]
 
-    # load configurations
-    source_config = pipeline_config["source"]
-    target_config = pipeline_config["target"]
-    cleaning_rules = pipeline_config["cleaning"]
-    mapping_config = pipeline_config["mappings"]
-    columns_config = pipeline_config["columns"]
-
-    etl_config = {
-        "source": source_config,
-        "target": target_config,
-        "cleaning": cleaning_rules,
-        "mappings": mapping_config,
-        "columns": columns_config,
-    }
-    return etl_config
+        etl_config = {
+            "source": source_config,
+            "target": target_config,
+            "cleaning": cleaning_rules,
+            "mappings": mapping_config,
+            "columns": columns_config,
+        }
+        return lower_keys(etl_config)
+    except Exception as e:
+        error_context = errors.ErrorContext(original_exception=e)
+        raise errors.ConfigError("Error loading pipeline configuration", error_context)
 
 
 def load_project_config(project_config_file: Path) -> dict[str, Any]:
     """Load the project configuration"""
-    with open(project_config_file) as f:
-        raw_config = yaml.safe_load(f)
-    return lower_keys(raw_config)
+    try:
+        with open(project_config_file) as f:
+            raw_config = yaml.safe_load(f)
+        return lower_keys(raw_config)
+    except Exception as e:
+        error_context = errors.ErrorContext(original_exception=e)
+        raise errors.ConfigError("Error loading project configuration", error_context)
 
 
-def setup_context(
-    log_dir: Path,
-    data_dir: Path,
-    config_dir: Path,
-    run_date: datetime,
-    output_dir: Path,
-) -> dict[str, Any]:
+def setup_context() -> dict[str, Any]:
     """Set up the context with the minumum information"""
-    context = {
-        "environment": "development",
-        "log_dir": log_dir,
-        "log_level": "INFO",
-        "max_logs": 5,  # keep last 5 log files per module
-        "run_date": run_date.date(),  # datetime.date object
-        # all log files for the same run have the same timestamp
-        "run_timestamp": run_date.strftime("%Y-%m-%d_%H-%M-%S"),
-        "data_dir": data_dir,
-        "output_dir": output_dir,
-        "config_dir": config_dir,
-        "cleaned_suffix": "_cleaned",
-    }
-    return context
+    # figure out paths
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        log_dir = project_root / "logs"
+        config_dir = project_root / "config"
+        data_dir = project_root / "data" / "raw"
+        output_dir = project_root / "data" / "processed"
+
+        run_date = datetime.now()
+
+        context = {
+            "environment": "development",
+            "log_dir": log_dir,
+            "log_level": "INFO",
+            "max_logs": 5,  # keep last 5 log files per module
+            "run_date": run_date.date(),  # datetime.date object
+            # all log files for the same run have the same timestamp
+            "run_timestamp": run_date.strftime("%Y-%m-%d_%H-%M-%S"),
+            "data_dir": data_dir,
+            "output_dir": output_dir,
+            "config_dir": config_dir,
+            "cleaned_suffix": "_cleaned",
+        }
+        return context
+    except Exception as e:
+        error_context = errors.ErrorContext(original_exception=e)
+        raise errors.ConfigError("Error setting up run-time context", error_context)
 
 
 def extend_context(
     context: dict[str, Any], pipeline_config: dict[str, Any]
 ) -> dict[str, Any]:
     """Add to the context from the  configuration"""
+    try:
+        context["project_name"] = pipeline_config.get("project_name", "excel_to_sql")
+        context["strict_validation"] = pipeline_config.get("validation_mode", "strict") == "strict"
+        header_row = pipeline_config.get("header_row", 1)
+        context["row_offset"] = 1 + header_row
+        source = pipeline_config.get("source")
+        if source is None:
+            raise ValueError("Source must be given")
+        source_file = source.get("file")
+        if source_file is None:
+            raise ValueError("Source file must be given")
+        context["source_file"] = source_file
 
-    context["project_name"] = pipeline_config.get("project_name", "excel_to_sql")
-    context["validation_mode"] = pipeline_config.get("validation_mode", "strict")
-    header_row = pipeline_config.get("header_row", 1)
-    context["row_offset"] = 1 + header_row
-
-    return context
+        return context
+    except Exception as e:
+        error_context = errors.ErrorContext(original_exception=e)
+        raise errors.ConfigError("Error extending run-time context", error_context)
 
 
 def run_etl() -> None:
     """
     Run the ETL pipeline
     """
-    # figure out paths
-    project_root = Path(__file__).resolve().parents[2]
-    log_dir = project_root / "logs"
-    config_dir = project_root / "config"
-    data_dir = project_root / "data" / "raw"
-    output_dir = project_root / "data" / "processed"
-
-    # load project config
-    project_config_file = config_dir / "project_config.yaml"
-    project_config = load_project_config(project_config_file)
-
-    # setup the run time context - get the current date time once for the run
-    context = setup_context(
-        log_dir=log_dir,
-        data_dir=data_dir,
-        config_dir=config_dir,
-        run_date=datetime.now(),
-        output_dir=output_dir,
-    )
+    # set up the context
+    context = setup_context()
 
     # get logger and log start
     logger = logging_setup.get_logger(context, __name__)
     logger.info("Loading ETL pipeline configuration")
     logger.info(f"Pandas version {pd.__version__}")
 
-    # now load the pipeline configuration
-    pipeline_config = load_pipeline_config(project_config, context)
+    try:
+        # load project config
+        project_config_file = context["config_dir"] / "project_config.yaml"
+        project_config = load_project_config(project_config_file)
 
-    # add more attributes to the runtime context
-    context = extend_context(context, pipeline_config)
+        # now load the pipeline configuration
+        pipeline_config = load_pipeline_config(project_config, context)
 
-    # validate schema, and fail on any errors
-    logger.info(f"Validating ETL pipeline configuration")
-    schema = validate_schema(pipeline_config, logger)
+        # add more attributes to the runtime context
+        context = extend_context(context, pipeline_config)
 
-    tables: dict[str, pd.DataFrame] = dict()
-    # go through table by table
-    for table_name, mapping in pipeline_config["mappings"].items():
-        # Step 1: extract sheet
-        col_configs = pipeline_config.get("columns", None)
-        if col_configs is None:
-            continue  # won't get here because error already logged and raised
-        table_cols = col_configs.get(table_name, None)
-        if table_cols is None:
-            continue  # won't get here because error already logged and raised
-        df = extractor.load_excel(
-            pipeline_config["source"],
-            table_name,
-            mapping["sheet_name"],
-            table_cols,
+        # validate schema, and fail on any errors
+        logger.info("Validating ETL pipeline configuration")
+        schema = validate_schema(pipeline_config, logger)
+
+        tables: dict[str, pd.DataFrame] = dict()
+        # go through table by table
+        for table_name, mapping in pipeline_config["mappings"].items():
+            # Step 1: extract sheet
+            col_configs = pipeline_config.get("columns", None)
+            if col_configs is None:
+                continue  # won't get here because error already logged and raised
+            table_cols = col_configs.get(table_name, None)
+            if table_cols is None:
+                continue  # won't get here because error already logged and raised
+            df = extractor.load_excel(
+                pipeline_config["source"],
+                table_name,
+                mapping["sheet_name"],
+                table_cols,
+                context,
+            )
+
+            # Step 2: keep track of number of NaN/NaT
+            nan_stats: list[dict[str, Any]] = []
+            update_nan_stats(nan_stats, ETLStages.LOADED, "After loading", context, df)
+
+            # Step 3: clean
+            df = cleaner.clean_data(
+                df,
+                pipeline_config["cleaning"],
+                table_name,
+                pipeline_config["columns"][table_name],
+                context,
+            )
+            update_nan_stats(
+                nan_stats, ETLStages.CLEANED, "After cleaning", context, df
+            )
+
+            # Step 4: transform
+            df = transformer.transform_data(
+                df, table_name, pipeline_config["columns"][table_name], context
+            )
+            update_nan_stats(
+                nan_stats, ETLStages.TRANSFORMED, "After transforming", context, df
+            )
+
+            # Step 5: validate
+            df = validator.validate_data(
+                df, table_name, pipeline_config["columns"][table_name], context
+            )
+            update_nan_stats(
+                nan_stats, ETLStages.VALIDATED, "After validation", context, df
+            )
+
+            # Step 6: log NaN summary
+            log_nan_stats(table_name, df.columns, nan_stats, logger)
+
+            # Step 7: add df to tables dict
+            tables[table_name] = df
+
+        # Step 8: validate foreign keys
+        validator.validate_foreign_keys(pipeline_config["columns"], tables, context)
+
+        # Step 9: finalise
+        finaliser.finalise(tables, context, logger)
+
+        # Step 10: load
+        loader.load_database(
+            project_config,
+            pipeline_config["target"],
+            schema,
+            tables,
             context,
+            logger,
         )
+        logger.info("ETL pipeline finished successfully")
+    except errors.PipelineError as e:
+        logger.error(str(e))
+        logger.debug(e.to_dict())
+        raise e
 
-        # Step 2: keep track of number of NaN/NaT
-        nan_stats: list[dict[str, Any]] = []
-        update_nan_stats(nan_stats, ETLStages.LOADED, "After loading", context, df)
-
-        # Step 3: clean
-        df = cleaner.clean_data(
-            df,
-            pipeline_config["cleaning"],
-            table_name,
-            pipeline_config["columns"][table_name],
-            context,
-        )
-        update_nan_stats(nan_stats, ETLStages.CLEANED, "After cleaning", context, df)
-
-        # Step 4: transform
-        df = transformer.transform_data(
-            df, table_name, pipeline_config["columns"][table_name], context
-        )
-        update_nan_stats(
-            nan_stats, ETLStages.TRANSFORMED, "After transforming", context, df
-        )
-
-        # Step 5: validate
-        df = validator.validate_data(
-            df, table_name, pipeline_config["columns"][table_name], context
-        )
-        update_nan_stats(
-            nan_stats, ETLStages.VALIDATED, "After validation", context, df
-        )
-
-        # Step 6: log NaN summary
-        log_nan_stats(table_name, df.columns, nan_stats, logger)
-
-        # Step 7: add df to tables dict
-        tables[table_name] = df
-
-    # Step 8: validate foreign keys
-    df = validator.validate_foreign_keys(pipeline_config["columns"], tables, context)
-
-    # Step 9: finalise
-    finaliser.finalise(tables, context, logger)
-
-    # Step 10: load
-    database_loader = loader.load_database(
-        project_config,
-        pipeline_config["target"],
-        schema,
-        tables,
-        context,
-        logger,
-    )
-    logger.info("ETL pipeline finished successfully")
+    finally:
+        logging_setup.shutdown()
