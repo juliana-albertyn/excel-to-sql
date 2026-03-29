@@ -1,170 +1,93 @@
+# Excel-to-SQL Pipeline
 
-## Excel to SQL Pipeline
+**Turn messy Excel files into clean, validated data — ready for reporting or databases.**
 
-A structured data processing utility that converts messy Excel files into clean, validated SQL-ready datasets.
-
-This project demonstrates:
-
-* Data cleaning
-* Column normalization
-* Validation logic
-* Error handling
-* Logging
-* SQL generation
-
-Designed as a portfolio project to simulate real-world client data import workflows.
+A lightweight, reliable ETL pipeline designed for real-world spreadsheets with inconsistent formats and errors.
 
 ---
 
-## 🚀 Project Overview
+## Who this is for
 
-Real-world Excel files are often:
-
-* Inconsistently formatted
-* Containing missing values
-* Using mixed data types
-* Including redundant or junk columns
-
-This tool:
-
-1. Loads Excel input
-2. Cleans and normalizes the data
-3. Applies validation rules
-4. Logs processing steps
-5. Outputs structured SQL statements or database-ready files
+* Small businesses using Excel as a data source
+* NGOs / schools managing manual datasets
+* Anyone struggling with messy spreadsheets
+* Developers needing a predictable import pipeline
 
 ---
 
-## 🏗 Architecture
+## What you get
 
-```
-excel-to-sql-pipeline/
-│
-├── main.py
-├── requirements.txt
-├── README.md
-│
-├── src/
-│   ├── parser.py
-│   ├── cleaner.py
-│   ├── validator.py
-│   ├── sql_writer.py
-│   └── logger.py
-│
-├── sample_data/
-│   ├── messy_input.xlsx
-│   └── output.sql
-│
-└── tests/
-```
+* Clean Excel file (**original + cleaned data**)
+* Per-sheet CSV exports
+* Clear error reporting
+* Reproducible, structured pipeline
 
 ---
 
-## 🧩 Features
+## Key features
 
-* Structured logging
-* Modular design
-* Clear separation of concerns
-* Data validation rules
-* SQL insert generation
-* Handles missing or malformed data
-* Removes junk / redundant columns
-* Outputs clean columns after original columns for comparison
+* Deterministic ingestion (YAML-configured)
+* Column validation (types, required fields, ranges, FK, datetime)
+* Transparent cleaning (no hidden transformations)
+* Structured logs for auditing and debugging
 
 ---
 
-## 🛠 Technologies Used
+## How it works
 
-* Python 3.x
-* pandas
-* openpyxl
-* logging
+1. Define schema and rules in YAML
+2. Add your Excel files
+3. Run the pipeline
+
+Outputs:
+
+* Clean Excel (before + after comparison)
+* CSVs per sheet
+* Logs with validation results
 
 ---
 
-## ▶️ How to Run
+## Pipeline structure
 
-### 1️⃣ Clone repository
+* `pipeline.py` — orchestration
+* `extractor.py` — load + structure checks
+* `cleaner.py` — normalisation
+* `transformer.py` — business rules
+* `validator.py` — constraints
+* `loader.py` — outputs
 
-```
-git clone https://github.com/yourusername/excel-to-sql-pipeline.git
-cd excel-to-sql-pipeline
-```
+---
 
-### 2️⃣ Create virtual environment
+## Why this is different
 
-```
-python -m venv venv
-source venv/bin/activate   # Mac/Linux
-venv\Scripts\activate      # Windows
-```
+* **Deterministic**: same input → same output
+* **Transparent**: users can see exactly what changed
+* **Practical**: built for messy, real-world Excel data
 
-### 3️⃣ Install dependencies
+---
 
-```
+## Install
+
+```bash
+git clone https://github.com/<your-username>/excel_to_sql_pipeline.git
+cd excel_to_sql_pipeline
 pip install -r requirements.txt
 ```
 
-### 4️⃣ Run the pipeline
-
-```
-python main.py
-```
+Requirements: Python 3.10+, pandas, openpyxl
 
 ---
 
-## 📊 Example Workflow
+## Roadmap
 
-Input:
-
-* Messy Excel sheet
-* Inconsistent column names
-* Missing values
-* Mixed types
-
-Output:
-
-* Cleaned dataset
-* Standardized column naming
-* SQL INSERT statements
-* Detailed processing log
+* SQL export (tables, inserts, upserts)
+* CLI
+* JSON output
 
 ---
 
-## 🎯 Use Case Simulation
+## Contributing
 
-This project simulates a typical client scenario:
-
-> “We have multiple Excel files from different sources. We need them cleaned and imported into our database.”
-
-The pipeline demonstrates how such a workflow can be automated reliably.
-
----
-
-## 🔐 Error Handling & Logging
-
-The system logs:
-
-* Invalid data rows
-* Type conversion failures
-* Missing required fields
-* Duplicate entries
-
-Logging ensures traceability and easier debugging.
-
----
-
-## 📈 Future Improvements
-
-* Direct database connection (PostgreSQL/MySQL)
-* CLI arguments
-* Batch file processing
-* Docker support
-
----
-
-## 📄 License
-
-MIT License
-
----
+* Open issues / PRs
+* Keep changes focused
+* Add tests (`pytest`)

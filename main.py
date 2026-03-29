@@ -1,8 +1,7 @@
 """
-Module: main
-Purpose: Call pipeline
+Entry point for the Fynbyte Excel-to-SQL pipeline.
 
-This module is part of the Fynbyte toolkit.
+Initialises and runs the full ETL process by invoking pipeline.run_etl().
 """
 
 __author__ = "Juliana Albertyn"

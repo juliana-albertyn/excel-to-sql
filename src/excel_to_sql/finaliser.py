@@ -1,10 +1,8 @@
 """
-Module: finaliser
-Purpose: Drops the original columns, and renames the _cleaned columns
-to the original names. The dataframe columns and schema columns
-will now correspond
+Finalisation step for the Fynbyte Exce-to-SQL pipeline.
 
-This module is part of the Fynbyte toolkit.
+Drops original source columns and renames cleaned columns back to their
+schema names so the final DataFrames match the expected SQL structure.
 """
 
 __author__ = "Juliana Albertyn"
@@ -16,12 +14,21 @@ import pandas as pd
 from pandas import DataFrame
 from logging import Logger
 
+import src.excel_to_sql.context as context
+
 
 def finalise(
-    dataframes: dict[str, DataFrame], context: dict[str, Any], logger: Logger
+    dataframes: dict[str, DataFrame], etl_context: context.ETLContext, logger: Logger
 ) -> dict[str, DataFrame]:
+    """
+    Replace original columns with their cleaned equivalents.
+
+    Drops all non-cleaned columns and renames cleaned columns back to their
+    original names using the configured cleaned_suffix. Returns the updated
+    DataFrame mapping.
+    """
     logger.info("Finalising ETL pipeline")
-    cleaned_suffix = context.get("cleaned_suffix")
+    cleaned_suffix = etl_context.cleaned_suffix
     if cleaned_suffix is not None:
         for df in dataframes.values():
             # Drop original columns
