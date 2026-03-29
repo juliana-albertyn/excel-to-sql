@@ -10,5 +10,6 @@ __pycache__/
 logs/
 .vscode/bookmarks.json
 
-# ignore pdfs, only save raw files
-*.pdf
+
+*.odt
+*.ods
