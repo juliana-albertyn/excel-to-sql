@@ -1,8 +1,9 @@
 """
-Module: extractor
-Purpose: Extracts data from excel workbook with worksheets to pandas dataframe
+Excel extractor for the Fynbyte Excel-to-SQL pipeline.
 
-This module is part of the Fynbyte toolkit.
+Opens the configured workbook, loads a worksheet into a DataFrame,
+validates sheet existence, checks column headers, and applies the
+source-to-target column mapping defined in the schema.
 """
 
 __author__ = "Juliana Albertyn"
@@ -17,6 +18,7 @@ from pandas import DataFrame
 
 import src.excel_to_sql.logging_setup as logging_setup
 import src.excel_to_sql.errors as errors
+import src.excel_to_sql.context as context
 
 
 def load_excel(
@@ -24,12 +26,18 @@ def load_excel(
     table_name: str,
     sheet_name: str,
     column_config: dict[str, Any],
-    context: dict[str, Any],
+    etl_context: context.ETLContext,
 ) -> DataFrame:
-    """load data from excel into dataframe"""
-    logger = logging_setup.get_logger(context, __name__)
-    logger.info(f"Extracting data for *** {table_name} *** from sheet {sheet_name}")
-    file_name = Path(context["data_dir"]) / src_config["file"]
+    """
+    Load a worksheet from an Excel file into a DataFrame.
+
+    Validates file access, sheet existence, header row settings, and
+    unexpected column names. Renames source columns to their configured SQL
+    column names and returns the loaded DataFrame.
+    """    
+    logger = logging_setup.get_logger(etl_context, __name__)
+    logger.info(f"Extracting data for *** {table_name} *** from sheet '{sheet_name}'")
+    file_name = Path(etl_context.data_dir) / src_config["file"]
     # header row for excel validation starts at 1
     header_row = src_config.get("header_row", 1)
     # column header row for load from excel is zero based
@@ -91,14 +99,21 @@ def load_excel(
     # Step 5: check for unknown column headers in the excel spreadsheet
     # check actual source_column names against the loaded excel column names
     expected = set()
+
     for col_name, col in column_config.items():
         source_col = col.get("source_column")
-        if source_col is not None:
-            expected = expected + source_col
+        if source_col is None:
+            continue
+
+        if isinstance(source_col, list):
+            expected.update(source_col)
+        else:
+            expected.add(source_col)
+
     actual = set(df.columns)
     unexpected = actual - expected
     if len(unexpected) > 0:
-        if context.get("strict_validation", True):
+        if etl_context.strict_validation:
             error_context = errors.ErrorContext()
             error_context.table_name = table_name
             error_context.details = {
