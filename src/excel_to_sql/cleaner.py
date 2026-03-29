@@ -1,19 +1,13 @@
 """
-Module: cleaner
-Purpose: Clean data imported into pandas from excel.
+Cleaning engine for the Fynbyte Excel-to-SQL pipeline.
 
-Responsibilities:
-Drop empty rows
-Trim whitespace
-Replace NaN
-Normalize case
-Strip special characters
-Standardize formats
-Normalize date formats
-Convert strings to datetime
-Remove obvious junk
-Apply locale rules
-Standardize timezone if needed
+Applies global and per-column cleaning rules before validation.
+Handles whitespace trimming, null normalisation, type coercion,
+date/time parsing, numeric conversion, and basic format cleanup.
+Uses ETLContext settings for strictness, locale, and parser behaviour.
+
+Does not infer meaning or repair data. Only standardises and prepares it
+for validation and loading.
 
 This module is part of the Fynbyte toolkit.
 """
@@ -22,279 +16,185 @@ __author__ = "Juliana Albertyn"
 __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-02-08"
 
-from typing import Any, Optional
+from typing import Any
 import pandas as pd
 from pandas import DataFrame
-from datetime import date, datetime, time
 from logging import Logger
 import base64
 from binascii import Error as BinasciiError
 
 import src.excel_to_sql.logging_setup as logging_setup
 import src.excel_to_sql.errors as errors
+import src.excel_to_sql.context as context
 
 
 def str_to_bool(value: str | bool) -> bool:
     """
-    Convert common truthy strings to a boolean.
-    Accepts 'true', 'yes', '1' (case-insensitive).
-    Returns True for those, False otherwise.
+    Convert common truthy values to boolean.
+
+    Strings like 'true', 'yes', '1' (case-insensitive) return True.
+    All other values fall back to Python truthiness.
     """
     if isinstance(value, str):
         return value.strip().lower() in ("true", "yes", "1")
     return bool(value)  # fallback for non-strings
 
 
-def str_to_iso_date(value: str | date, day_first_format: bool) -> Optional[date]:
-    "if date, return as-is, else if a str, convert to a date in iso format YYYY-MM-DD"
-    if isinstance(value, date):
-        return value
-    elif isinstance(value, str):
-        value = value.strip()
-        format_list = [
-            "%d-%b-%Y",
-            "%d %b %Y",
-            "%b %d, %Y",
-            "%d-%B-%Y",
-            "%d %B %Y",
-            "%Y%m%d",
-            "%Y/%m/%d",
-            "%B %d, %Y",
-        ]
-        if day_first_format:
-            format_list.extend(["%d%m%Y", "%d/%m/%Y"])
-        else:
-            format_list.extend(["%m%d%Y", "%m/%d/%Y"])
-
-        for fmt in format_list:
-            try:
-                return datetime.strptime(value, fmt).date()
-            except (ValueError, TypeError):
-                continue
-        return
-    else:
-        return
-
-
-def str_to_iso_datetime(
-    value: str | datetime, day_first_format: bool
-) -> Optional[datetime]:
-    """
-    Convert a string into a datetime.datetime object using a list of common
-    date+time formats. Returns None if parsing fails.
-    """
-    if isinstance(value, datetime):
-        return value
-
-    if isinstance(value, str):
-        value = value.strip()
-
-        # Base formats (date + time)
-        format_list = [
-            "%Y-%m-%d %H:%M",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y/%m/%d %H:%M",
-            "%Y/%m/%d %H:%M:%S",
-            "%Y-%m-%dT%H:%M",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y%m%d %H:%M",
-            "%Y%m%d %H:%M:%S",
-            # 12-hour formats
-            "%Y-%m-%d %I:%M %p",
-            "%Y/%m/%d %I:%M %p",
-            "%b %d, %Y %I:%M %p",
-            "%B %d, %Y %I:%M %p",
-        ]
-
-        # Day-first variants
-        if day_first_format:
-            format_list.extend(
-                [
-                    "%d/%m/%Y %H:%M",
-                    "%d/%m/%Y %H:%M:%S",
-                    "%d-%m-%Y %H:%M",
-                    "%d-%m-%Y %H:%M:%S",
-                    "%d-%m-%Y %I:%M %p",
-                    "%d/%m/%Y %I:%M %p",
-                ]
-            )
-        else:
-            format_list.extend(
-                [
-                    "%m/%d/%Y %H:%M",
-                    "%m/%d/%Y %H:%M:%S",
-                    "%m-%d-%Y %H:%M",
-                    "%m-%d-%Y %H:%M:%S",
-                    "%m-%d-%Y %I:%M %p",
-                    "%m/%d/%Y %I:%M %p",
-                ]
-            )
-
-        for fmt in format_list:
-            try:
-                return datetime.strptime(value, fmt)
-            except (ValueError, TypeError):
-                continue
-
-    return None
-
-
-def str_to_iso_time(value: str | datetime | date) -> Optional[time]:
-    """
-    Convert a string into a datetime.time object using common time formats.
-    Returns None if parsing fails.
-    """
-    # If it's already a datetime or date, extract time if present
-    if isinstance(value, datetime):
-        return value.time()
-    if isinstance(value, date):
-        return None  # dates have no time component
-
-    if isinstance(value, str):
-        value = value.strip()
-
-        format_list = [
-            "%H:%M",
-            "%H:%M:%S",
-            "%I:%M %p",
-            "%I:%M:%S %p",
-        ]
-
-        for fmt in format_list:
-            try:
-                return datetime.strptime(value, fmt).time()
-            except (ValueError, TypeError):
-                continue
-
-    return None
-
-
 def col_to_date(
-    series: pd.Series, strict: bool, day_first: bool, table_name: str, col_name: str
-) -> pd.Series:
-    iso_fmt = "%Y-%m-%d"
-    secondary_fmt = "%d-%m-%Y" if day_first else "%m-%d-%Y"
-
-    if strict:
-        try:
-            return pd.to_datetime(series, errors="raise", format=iso_fmt)
-        except Exception as e:
-            temp = pd.to_datetime(series, errors="coerce", format=iso_fmt)
-            mask = temp.isna()
-            bad_index = series.index[mask][0]
-            bad_value = series.loc[bad_index]
-            raise errors.CleanerError(
-                f"Invalid date '{bad_value}' at row {bad_index}",
-                errors.ErrorContext(
-                    original_exception=e,
-                    rows=[int(bad_index)],
-                    table_name=table_name,
-                    column_name=col_name,
-                    details={"value": bad_value, "format": iso_fmt},
-                ),
-            )
-
-    # permissive mode
-    out = pd.to_datetime(series, errors="coerce", format=iso_fmt)
-    mask = out.isna()
-    out.loc[mask] = pd.to_datetime(
-        series.loc[mask], errors="coerce", format=secondary_fmt
-    )
-    mask = out.isna()
-    out.loc[mask] = series.loc[mask].apply(str_to_iso_date, day_first_format=day_first)
-    return out
-
-
-def col_to_datetime(
-    series: pd.Series, strict: bool, day_first: bool, table_name: str, col_name: str
-) -> pd.Series:
-    iso_fmt = "%Y-%m-%dT%H:%M:%S"
-    secondary_fmt = "%d-%m-%YT%H:%M:%S" if day_first else "%m-%d-%YT%H:%M:%S"
-
-    if strict:
-        try:
-            return pd.to_datetime(series, errors="raise", format=iso_fmt)
-        except Exception as e:
-            temp = pd.to_datetime(series, errors="coerce", format=iso_fmt)
-            mask = temp.isna()
-            bad_index = series.index[mask][0]
-            bad_value = series.loc[bad_index]
-            raise errors.CleanerError(
-                f"Invalid datetime '{bad_value}' at row {bad_index}",
-                errors.ErrorContext(
-                    original_exception=e,
-                    rows=[int(bad_index)],
-                    table_name=table_name,
-                    column_name=col_name,
-                    details={"value": bad_value, "format": iso_fmt},
-                ),
-            )
-
-    # permissive mode
-    out = pd.to_datetime(series, errors="coerce", format=iso_fmt)
-    mask = out.isna()
-    out.loc[mask] = pd.to_datetime(
-        series.loc[mask], errors="coerce", format=secondary_fmt
-    )
-    mask = out.isna()
-    out.loc[mask] = series.loc[mask].apply(
-        str_to_iso_datetime, day_first_format=day_first
-    )
-    return out
-
-
-def col_to_time(
-    series: pd.Series, strict: bool, table_name: str, col_name: str
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Convert a pandas Series to Python datetime.time objects.
-    Uses str_to_iso_time for parsing.
+    Parse a Series to datetime using ETLContext's datetime parser.
+
+    Raises CleanerError if the parser is missing, or (in strict mode)
+    on the first non-null value that fails to parse. Otherwise invalid
+    values are coerced to NaT. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
+    if etl_context.datetime_parser is None:
+        raise errors.CleanerError(
+            "DateTime parser not initialised",
+            errors.ErrorContext(
+                original_exception=None,
+                rows=[],
+                table_name=table_name,
+                column_name=col_name,
+                details={"function": "col_to_date"},
+            ),
+        )
+    out = series.apply(etl_context.datetime_parser.parse_date)
 
-    # Convert everything using helper
-    out = series.map(str_to_iso_time)
-
-    if strict:
+    if etl_context.strict_validation:
         mask = out.isna() & series.notna()
-
         if mask.any():
-            bad_index = series.index[mask][0]
+            bad_index = mask.index[0]
             bad_value = series.loc[bad_index]
 
             raise errors.CleanerError(
-                f"Invalid time '{bad_value}' at row {bad_index}",
+                f"Invalid date '{bad_value}' at row {bad_index + etl_context.row_offset}",
                 errors.ErrorContext(
                     original_exception=None,
-                    rows=[int(bad_index)],
+                    rows=[int(bad_index) + etl_context.row_offset],
                     table_name=table_name,
                     column_name=col_name,
                     details={"value": bad_value},
                 ),
             )
 
-    return out.astype("object")
+    return pd.to_datetime(out, errors="coerce")
+
+
+def col_to_time(
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
+) -> pd.Series:
+    """
+    Parse a Series to time using ETLContext's parser.
+
+    Raises CleanerError if the parser is missing, or (in strict mode)
+    on the first non-null value that fails to parse. Otherwise invalid
+    values are coerced to NaT. Error messages include table/column and
+    row_offset-adjusted row numbers.
+    """
+    if etl_context.datetime_parser is None:
+        raise errors.CleanerError(
+            "DateTime parser not initialised",
+            errors.ErrorContext(
+                original_exception=None,
+                rows=[],
+                table_name=table_name,
+                column_name=col_name,
+                details={"function": "col_to_time"},
+            ),
+        )
+
+    out = series.apply(etl_context.datetime_parser.parse_time)
+
+    if etl_context.strict_validation:
+        mask = out.isna() & series.notna()
+        if mask.any():
+            bad_index = mask.index[0]
+            bad_value = series.loc[bad_index]
+
+            raise errors.CleanerError(
+                f"Invalid time '{bad_value}' at row {bad_index + etl_context.row_offset}",
+                errors.ErrorContext(
+                    original_exception=None,
+                    rows=[int(bad_index) + etl_context.row_offset],
+                    table_name=table_name,
+                    column_name=col_name,
+                    details={"value": bad_value},
+                ),
+            )
+
+    return pd.to_datetime(out, errors="coerce")
+
+
+def col_to_datetime(
+    series: pd.Series,
+    table_name: str,
+    col_name: str,
+    etl_context: context.ETLContext,
+) -> pd.Series:
+    """
+    Parse a Series to datetime using ETLContext's parser.
+
+    Raises CleanerError if the parser is missing, or (in strict mode)
+    on the first non-null value that fails to parse. Otherwise invalid
+    values are coerced to NaT. Error messages include table/column and
+    row_offset-adjusted row numbers.
+    """
+    if etl_context.datetime_parser is None:
+        raise errors.CleanerError(
+            "DateTime parser not initialised",
+            errors.ErrorContext(
+                original_exception=None,
+                rows=[],
+                table_name=table_name,
+                column_name=col_name,
+                details={"function": "col_to_datetime"},
+            ),
+        )
+
+    out = series.apply(etl_context.datetime_parser.parse_datetime)
+
+    if etl_context.strict_validation:
+        mask = out.isna() & series.notna()
+        if mask.any():
+            bad_index = mask.index[0]
+            bad_value = series.loc[bad_index]
+
+            raise errors.CleanerError(
+                f"Invalid datetime '{bad_value}' at row {bad_index + etl_context.row_offset}",
+                errors.ErrorContext(
+                    original_exception=None,
+                    rows=[int(bad_index) + etl_context.row_offset],
+                    table_name=table_name,
+                    column_name=col_name,
+                    details={"value": bad_value},
+                ),
+            )
+
+    return pd.to_datetime(out, errors="coerce")
 
 
 def col_to_money(
-    series: pd.Series,
-    strict: bool,
-    currency_symbol: str,
-    table_name: str,
-    col_name: str,
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Clean a money/smallmoney column:
-    - remove currency symbols
-    - strip whitespace
-    - convert to numeric
-    - strict/permissive behaviour
+    Parse a Series to numeric after removing currency symbols.
+
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are coerced to NaN. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
-    # Step 1: remove currency symbol and whitespace
+    # remove currency symbol and whitespace
     cleaned = (
-        series.astype(str).str.replace(currency_symbol, "", regex=False).str.strip()
+        series.astype("string")
+        .str.replace(etl_context.currency_symbol, "", regex=False)
+        .str.strip()
     )
 
-    if strict:
+    if etl_context.strict_validation:
         try:
             return pd.to_numeric(cleaned, errors="raise")
         except Exception as e:
@@ -306,10 +206,10 @@ def col_to_money(
             bad_value = series.loc[bad_index]
 
             raise errors.CleanerError(
-                f"Invalid money value '{bad_value}' at row {bad_index}",
+                f"Invalid money value '{bad_value}' at row {bad_index + etl_context.row_offset}",
                 errors.ErrorContext(
                     original_exception=e,
-                    rows=[int(bad_index)],
+                    rows=[int(bad_index) + etl_context.row_offset],
                     table_name=table_name,
                     column_name=col_name,
                     details={"value": bad_value},
@@ -321,21 +221,15 @@ def col_to_money(
     return out
 
 
-def col_to_str(
-    series: pd.Series,
-    str_case: str,
-    table_name: str,
-    col_name: str,
-) -> pd.Series:
+def col_to_str(series: pd.Series, str_case: str) -> pd.Series:
     """
-    Clean a string/text column:
-    - trim whitespace
-    - apply case rules (lower/upper/title/asis)
-    - convert empty strings and 'nan' to pd.NA
-    - return pandas string dtype
+    Clean a Series as string data.
+
+    Trims whitespace, applies case rules, and converts empty or 'nan'
+    strings to pd.NA. Returns pandas string dtype.
     """
     # convert to string and trim
-    cleaned = series.astype(str).str.strip()
+    cleaned = series.astype("string").str.strip()
 
     # apply case rules
     str_case = str_case.lower()
@@ -355,17 +249,12 @@ def col_to_str(
     return cleaned.astype("string")
 
 
-def col_to_bit(
-    series: pd.Series,
-    table_name: str,
-    col_name: str,
-) -> pd.Series:
+def col_to_bit(series: pd.Series) -> pd.Series:
     """
-    Clean a BIT column:
-    - convert truthy strings to True
-    - convert falsy strings to False
-    - preserve existing booleans
-    - return a boolean Series
+    Convert a Series to boolean values.
+
+    Applies truthy string mapping and preserves existing booleans.
+    Returns pandas nullable boolean dtype.
     """
     # apply helper
     cleaned = series.apply(str_to_bool)
@@ -376,14 +265,18 @@ def col_to_bit(
 
 def col_to_int(
     series: pd.Series,
-    strict: bool,
     table_name: str,
     col_name: str,
+    etl_context: context.ETLContext,
 ) -> pd.Series:
     """
-    Clean integer-like columns: tinyint, smallint, int, bigint.
+    Parse a Series to integer (nullable Int64).
+
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are coerced to NaN. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
-    if strict:
+    if etl_context.strict_validation:
         try:
             return pd.to_numeric(series, errors="raise").astype("Int64")
         except Exception as e:
@@ -394,10 +287,10 @@ def col_to_int(
             bad_value = series.loc[bad_index]
 
             raise errors.CleanerError(
-                f"Invalid integer '{bad_value}' at row {bad_index}",
+                f"Invalid integer '{bad_value}' at row {bad_index + etl_context.row_offset}",
                 errors.ErrorContext(
                     original_exception=e,
-                    rows=[int(bad_index)],
+                    rows=[int(bad_index) + etl_context.row_offset],
                     table_name=table_name,
                     column_name=col_name,
                     details={"value": bad_value},
@@ -405,20 +298,21 @@ def col_to_int(
             )
 
     # permissive mode
-    out = pd.to_numeric(series, errors="coerce").astype("Int64")
-    return out
+
+    return pd.to_numeric(series, errors="coerce").astype("Int64")
 
 
 def col_to_numeric(
-    series: pd.Series,
-    strict: bool,
-    table_name: str,
-    col_name: str,
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Clean SQL NUMERIC columns.
+    Parse a Series to numeric values.
+
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are coerced to NaN. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
-    if strict:
+    if etl_context.strict_validation:
         try:
             return pd.to_numeric(series, errors="raise")
         except Exception as e:
@@ -429,10 +323,10 @@ def col_to_numeric(
             bad_value = series.loc[bad_index]
 
             raise errors.CleanerError(
-                f"Invalid numeric value '{bad_value}' at row {bad_index}",
+                f"Invalid numeric value '{bad_value}' at row {bad_index + etl_context.row_offset}",
                 errors.ErrorContext(
                     original_exception=e,
-                    rows=[int(bad_index)],
+                    rows=[int(bad_index) + etl_context.row_offset],
                     table_name=table_name,
                     column_name=col_name,
                     details={"value": bad_value},
@@ -443,15 +337,16 @@ def col_to_numeric(
 
 
 def col_to_decimal_float_real(
-    series: pd.Series,
-    strict: bool,
-    table_name: str,
-    col_name: str,
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Clean SQL DECIMAL, FLOAT, REAL columns.
+    Parse a Series to float/decimal values.
+
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are coerced to NaN. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
-    if strict:
+    if etl_context.strict_validation:
         try:
             return pd.to_numeric(series, errors="raise")
         except Exception as e:
@@ -462,10 +357,10 @@ def col_to_decimal_float_real(
             bad_value = series.loc[bad_index]
 
             raise errors.CleanerError(
-                f"Invalid decimal/float value '{bad_value}' at row {bad_index}",
+                f"Invalid decimal/float value '{bad_value}' at row {bad_index + etl_context.row_offset}",
                 errors.ErrorContext(
                     original_exception=e,
-                    rows=[int(bad_index)],
+                    rows=[int(bad_index) + etl_context.row_offset],
                     table_name=table_name,
                     column_name=col_name,
                     details={"value": bad_value},
@@ -476,16 +371,16 @@ def col_to_decimal_float_real(
 
 
 def col_to_binary(
-    series: pd.Series,
-    strict: bool,
-    table_name: str,
-    col_name: str,
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Clean BINARY / VARBINARY columns.
-    Expect hex strings or byte-like values.
+    Parse a Series to binary (bytes) from hex strings.
+
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are set to None. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
-    cleaned = series.astype(str).str.strip()
+    cleaned = series.astype("string").str.strip()
 
     def to_bytes(val: str):
         if val in ("", "nan"):
@@ -497,14 +392,14 @@ def col_to_binary(
 
     out = cleaned.apply(to_bytes)
 
-    if strict and out.isna().any():
+    if etl_context.strict_validation and out.isna().any():
         bad_index = out.index[out.isna()][0]
         bad_value = series.loc[bad_index]
         raise errors.CleanerError(
-            f"Invalid binary value '{bad_value}' at row {bad_index}",
+            f"Invalid binary value '{bad_value}' at row {bad_index + etl_context.row_offset}",
             errors.ErrorContext(
                 original_exception=None,
-                rows=[int(bad_index)],
+                rows=[int(bad_index) + etl_context.row_offset],
                 table_name=table_name,
                 column_name=col_name,
                 details={"value": bad_value},
@@ -515,18 +410,15 @@ def col_to_binary(
 
 
 def col_to_image(
-    series: pd.Series,
-    strict: bool,
-    table_name: str,
-    col_name: str,
+    series: pd.Series, table_name: str, col_name: str, etl_context: context.ETLContext
 ) -> pd.Series:
     """
-    Validate image data:
-    - Accept hex strings, base64 strings, or raw bytes
-    - Decode to bytes
-    - Validate magic bytes for JPEG, PNG, GIF, BMP
-    - Strict mode: raise on first invalid value
-    - Permissive mode: invalid values become pd.NA
+    Parse and validate image data as bytes.
+
+    Accepts hex, base64, or raw bytes and checks known image signatures.
+    Strict mode raises on the first invalid value; otherwise invalid
+    values are set to None. Error messages include table/column and
+    row_offset-adjusted row numbers.
     """
 
     # Magic byte signatures
@@ -566,15 +458,15 @@ def col_to_image(
 
     decoded = series.apply(decode_and_validate)
 
-    if strict and decoded.isna().any():
+    if etl_context.strict_validation and decoded.isna().any():
         bad_index = decoded.index[decoded.isna()][0]
         bad_value = series.loc[bad_index]
 
         raise errors.CleanerError(
-            f"Invalid image data '{bad_value}' at row {bad_index}",
+            f"Invalid image data '{bad_value}' at row {bad_index + etl_context.row_offset}",
             errors.ErrorContext(
                 original_exception=None,
-                rows=[int(bad_index)],
+                rows=[int(bad_index) + etl_context.row_offset],
                 table_name=table_name,
                 column_name=col_name,
                 details={"value": bad_value},
@@ -585,14 +477,18 @@ def col_to_image(
 
 
 def trim_whitespace(df: pd.DataFrame) -> pd.DataFrame:
-    """get rid of whitespace in the data frame"""
-    for col in df.select_dtypes(include="object"):
+    """
+    Trim leading and trailing whitespace in string columns.
+    """
+    for col in df.select_dtypes(include=["object", "string"]):
         df[col] = df[col].str.strip()
     return df
 
 
 def standardise_nulls(df: pd.DataFrame) -> pd.DataFrame:
-    "standardise nulls to pd.NA"
+    """
+    Replace common null-like strings with pd.NA in string columns.
+    """
     return df.apply(
         lambda col: (
             col.replace(r"^(NA|N/A|NULL|None)$", pd.NA, regex=True)
@@ -603,39 +499,72 @@ def standardise_nulls(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def remove_empty_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove empty rows"""
+    """
+    Remove rows where all values are missing.
+    """
     return df.dropna(how="all")
 
 
 def log_column_changes(
-    df: pd.DataFrame, table_name, context: dict[str, Any], logger: Logger
+    df: pd.DataFrame, table_name, etl_context: context.ETLContext, logger: Logger
 ) -> None:
-    """log only changed values per table"""
+    """
+    Log differences between original and cleaned columns.
+
+    Compares values by type and logs row-level changes using
+    row_offset-adjusted row numbers.
+    """
     logger.info(f"Audit of cleaned values for *** {table_name} ***:")
-    cleaned_suffix = context.get("cleaned_suffix", "")
+    cleaned_suffix = etl_context.cleaned_suffix
     # get the row offset from the context
-    row_offset = context.get("row_offset", 1)
+    row_offset = etl_context.row_offset
 
     for col in df.columns:
-        if col.endswith("_cleaned"):
+        if col.endswith(cleaned_suffix):
             original_col = col.replace(cleaned_suffix, "")
 
-            left_num = pd.to_numeric(df[original_col], errors="coerce")
-            right_num = pd.to_numeric(df[col], errors="coerce")
+            orig = df[original_col]
+            clean = df[col]
+            equal_mask = pd.Series(False, index=clean.index)
 
-            numeric_diff = left_num.ne(right_num)
+            # 1. Missing values equal
+            both_missing = orig.isna() & clean.isna()
 
-            string_diff = df[original_col].astype("string").ne(df[col].astype("string"))
+            # 2. String comparison (detects trimming)
+            if pd.api.types.is_string_dtype(clean):
+                orig_str = orig.astype("string")
+                clean_str = clean.astype("string")
+                string_equal = orig_str.eq(clean_str)
+                equal_mask = both_missing | string_equal
 
-            mask = numeric_diff & string_diff
+            # 3. Numeric comparison
+            elif pd.api.types.is_numeric_dtype(clean):
+                orig_num = pd.to_numeric(orig, errors="coerce")
+                clean_num = pd.to_numeric(clean, errors="coerce")
+                numeric_equal = orig_num.eq(clean_num)
+                equal_mask = both_missing | numeric_equal
 
-            if not mask.any():
+            # 4. Dates comparison
+            elif pd.api.types.is_datetime64_any_dtype(clean):
+                # compare as str
+                orig_str = orig.astype("string").fillna(value="")
+                clean_str = clean.astype("string").fillna(value="")
+                orig_str = orig_str.str.replace("00:00:00", "").str.strip()
+                clean_str = clean_str.str.replace("00:00:00", "").str.strip()
+
+                string_equal = orig_str.eq(clean_str)
+
+                equal_mask = both_missing | string_equal
+
+            diff_mask = ~equal_mask
+
+            if not diff_mask.any():
                 logger.info(f"No cleaned values for column {original_col}")
             else:
-                for idx in df.index[mask]:
+                for idx in df.index[diff_mask]:
                     logger.info(
                         f"{original_col} | Row {idx + row_offset} | "
-                        f"{df.at[idx, original_col]} -> {df.at[idx, col]}"
+                        f"'{df.at[idx, original_col]}' -> '{df.at[idx, col]}'"
                     )
 
 
@@ -644,21 +573,30 @@ def clean_data(
     cleaning_rules: dict[str, Any],
     table_name: str,
     column_config: dict[str, Any],
-    context: dict[str, Any],
+    etl_context: context.ETLContext,
 ) -> pd.DataFrame:
-    """Clean data using cleaning rules from yaml."""
-    # Step 1: do automatic convert of data types e.g. object -> str
+    """
+    Clean a DataFrame using configured rules and column mappings.
+
+    Applies global cleaning steps, then per-column transformations
+    based on data types. Logs changes and returns the cleaned DataFrame.
+    """
+    # setup logger
+    logger = logging_setup.get_logger(etl_context, __name__)
+
+    # get the date parser - lazy create
+    etl_context.datetime_parser = etl_context.get_datetime_parser(logger)
+
+    # do automatic convert of data types e.g. object -> str
     df = df.convert_dtypes()
 
-    # Step 2: log 'before' info
-    logger = logging_setup.get_logger(context, __name__)
+    # log 'before' info
     logger.info(f"Cleaning data for *** {table_name} ***. Shape: {df.shape}")
 
-    # Step 3: Get context info
-    cleaned_suffix = context.get("cleaned_suffix", "")
-    strict_validation = context.get("strict_validation", True)
+    # Get context info
+    cleaned_suffix = etl_context.cleaned_suffix
 
-    # Step 4: apply global cleaning rules
+    # apply global cleaning rules
     if cleaning_rules.get("trim_whitespace", False):
         df = trim_whitespace(df)
         logger.info(f"Trimmed whitespace for *** {table_name} ***")
@@ -673,15 +611,11 @@ def clean_data(
             df = remove_empty_rows(df)
             logger.info(f"Removed {empty_rows} empty rows for *** {table_name} ***")
 
-    # Step 5: get column cleaning ruls for currency and dates
-    currency_symbol = cleaning_rules.get("currency_symbol", "")
-    day_first_format = cleaning_rules.get("day_first_format", True)
-
-    # Step 6: clean all columns according to the column rules
+    # clean all columns according to the column rules
     for col_name, col_config in column_config.items():
         cleaned_col = f"{col_name}{cleaned_suffix}"
         logger.info(f"Cleaning column: {col_name}->{cleaned_col}")
-        # data type - remember schema has already been validated in extractor
+        # data type - remember schema has already been validated in pipeline
         dtype = col_config["data_type"].split("(", 1)[0].strip()
         # data types and formats
         if dtype in ["char", "varchar", "text", "nchar", "nvarchar", "ntext"]:
@@ -689,88 +623,81 @@ def clean_data(
             df[cleaned_col] = col_to_str(
                 df[col_name],
                 str_case=str_case,
-                table_name=table_name,
-                col_name=col_name,
             )
         elif dtype in ["tinyint", "smallint", "int", "bigint"]:
             df[cleaned_col] = col_to_int(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
         elif dtype == "numeric":
             df[cleaned_col] = col_to_numeric(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
         elif dtype in ["decimal", "float", "real"]:
             df[cleaned_col] = col_to_decimal_float_real(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
         elif dtype in ["binary", "varbinary"]:
             df[cleaned_col] = col_to_binary(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
         elif dtype == "image":
             df[cleaned_col] = col_to_image(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
         elif dtype == "bit":
             df[cleaned_col] = col_to_bit(
                 df[col_name],
-                table_name=table_name,
-                col_name=col_name,
             )
         elif dtype == "date":
             df[cleaned_col] = col_to_date(
                 df[col_name],
-                strict=strict_validation,
-                day_first=day_first_format,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
         elif dtype == "datetime":
             df[cleaned_col] = col_to_datetime(
                 df[col_name],
-                strict=strict_validation,
-                day_first=day_first_format,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
         elif dtype == "time":
             df[cleaned_col] = col_to_time(
                 df[col_name],
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
         elif dtype in ["smallmoney", "money"]:
             df[cleaned_col] = col_to_money(
                 df[col_name],
-                currency_symbol=currency_symbol,
-                strict=strict_validation,
                 table_name=table_name,
                 col_name=col_name,
+                etl_context=etl_context,
             )
 
-    # Step 7: log only cleaned columns
-    log_column_changes(df, table_name, context, logger)
+    # log only cleaned columns
+    log_column_changes(df, table_name, etl_context, logger)
 
     return df
