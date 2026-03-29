@@ -1,8 +1,8 @@
 """
-Module: logging_setup
-Purpose: Configurable logger
+Logging utilities for the Fynbyte Excel-to-SQL pipeline.
 
-This module is part of the Fynbyte toolkit.
+Creates timestamped loggers with file and console handlers, applies
+pipeline-wide log settings, and automatically prunes old log files.
 """
 
 __author__ = "Juliana Albertyn"
@@ -11,35 +11,34 @@ __date__ = "2026-02-19"
 
 import logging
 import os
-from datetime import datetime
-from typing import Dict
 from glob import glob
 
+import src.excel_to_sql.context as context
 
-def get_logger(context: Dict, name: str) -> logging.Logger:
+
+def get_logger(etl_context: context.ETLContext, name: str) -> logging.Logger:
     """
-    Returns a logger configured with timestamped file and console handlers.
-    Automatically keeps only the last N log files per module.
+    Return a configured logger for the given module.
 
-    Args:
-        context (dict): Should contain 'log_level', 'log_format', 'log_dir', 'max_logs' (optional).
-        name (str): Logger name (typically module name).
+    Creates timestamped file and console handlers, applies log level and
+    format settings from ETLContext, and removes older log files when the
+    limit is exceeded.
+    """    
+    # get the last part of the name
+    words = name.split(".")
+    if len(words) > 1:
+        name = words[-1]
 
-    Returns:
-        logging.Logger: Configured logger.
-    """
     # Log configuration
-    log_dir = context.get("log_dir", "logs")
+    log_dir = etl_context.log_dir
     os.makedirs(log_dir, exist_ok=True)
-    log_level = context.get("log_level", "INFO")
-    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    log_level = etl_context.log_level
+    log_format = "%(asctime)s [%(levelname)s]: %(message)s"
 
-    max_logs = context.get("max_logs", 10)  # keep last 10 logs by default
+    max_logs = etl_context.max_logs
 
     # Timestamped log file
-    timestamp = context.get(
-        "run_timestamp", datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    )
+    timestamp = etl_context.run_timestamp
     log_file_name = f"{name}_{timestamp}.log"
     log_file = os.path.join(log_dir, log_file_name)
 
@@ -53,11 +52,13 @@ def get_logger(context: Dict, name: str) -> logging.Logger:
 
         # File handler
         file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
         # Console handler
         console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
@@ -68,3 +69,10 @@ def get_logger(context: Dict, name: str) -> logging.Logger:
             os.remove(old_log)
 
     return logger
+
+
+def shutdown():
+    """
+    Flush and close all logging handlers.
+    """    
+    logging.shutdown()
