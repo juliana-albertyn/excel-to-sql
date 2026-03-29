@@ -1,0 +1,11 @@
+product_id,product_name,product_price,stock_quantity,product_id_cleaned,product_name_cleaned,product_price_cleaned,stock_quantity_cleaned
+1001,Eco Keyboard,100,13,1001,Eco Keyboard,100,13
+1002,Premium Keyboard,4408,23,1002,Premium Keyboard,4408,23
+1003,Advanced Keyboard,90,60,1003,Advanced Keyboard,90,60
+1004,Smart Monitor,1914,60,1004,Smart Monitor,1914,60
+1005,Premium Headphones,R4176,9,1005,Premium Headphones,,9
+1006,Smart Headphones,2018,71,1006,Smart Headphones,2018,71
+1007,Portable Monitor,4000,79,1007,Portable Monitor,4000,79
+1008,Smart Chair,3000,89,1008,Smart Chair,3000,89
+1009,Advanced Laptop,R4141,44,1009,Advanced Laptop,,44
+1010,Smart Monitor,R1376,61,1010,Smart Monitor,,61

@@ -1,0 +1,21 @@
+order_id,customer_id,order_date,order_status,order_id_cleaned,customer_id_cleaned,order_date_cleaned,order_status_cleaned
+101,1,1982-03-13,cancelled,101,1,1982-03-13,cancelled
+102,2,02-24-2025,p,102,2,,pending
+103,3,13-Feb-2026,x,103,3,2026-02-13,cancelled
+104,4,20/10/2012,p,104,4,2012-10-20,pending
+105,5,18/06/2023,pending,105,5,2023-06-18,pending
+106,6,1995-04-23,x,106,6,1995-04-23,cancelled
+107,7,22-Jan-2026,completed,107,7,2026-01-22,completed
+108,8,1979-07-07,c,108,8,1979-07-07,completed
+109,9,2023-02-28 00:00:00,cancelled,109,9,2023-02-28,cancelled
+110,10,2022-03-02 00:00:00,completed,110,10,2022-02-03,completed
+111,11,16/03/2020,x,111,11,2020-03-16,cancelled
+112,12,1978-04-09,complete,112,12,1978-09-04,completed
+113,13,11-15-2020,pending,113,13,,pending
+114,14,2020-06-24,done,114,14,2020-06-24,completed
+115,15,1999-06-09 00:00:00,completed,115,15,1999-09-06,completed
+116,16,2004-05-21,p,116,16,2004-05-21,pending
+117,17,29/05/2016,p,117,17,2016-05-29,pending
+118,18,09-27-2020,p,118,18,,pending
+119,19,20/11/2011,complete,119,19,2011-11-20,completed
+120,20,1985-08-11,c,120,20,1985-11-08,completed

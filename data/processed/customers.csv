@@ -1,0 +1,21 @@
+customer_id,customer_name,email,mobile,city,join_date,customer_id_cleaned,customer_name_cleaned,email_cleaned,mobile_cleaned,city_cleaned,join_date_cleaned
+1,Rebecca Ramos,courtney26@example.net,0802355323,Durban,06-02-2023,1,Rebecca Ramos,courtney26@example.net,+27802355323,Durban,2023-02-06
+2,Alan Lopez,iherrera@example.org,0715487129,Durban,03/03/2025,2,Alan Lopez,iherrera@example.org,+27715487129,Durban,2025-03-03
+3,Jonathan Hernandez,andersonjonathan@example.org,071746316,Bloemfontein,09-28-2022,3,Jonathan Hernandez,andersonjonathan@example.org,+2771746316,Bloemfontein,
+4,Michael Lawrence,millerlinda@example.net,0617583599,East London,05-Jan-2026,4,Michael Lawrence,millerlinda@example.net,+27617583599,East London,2026-01-05
+5,Justin?Morgan,benjaminhowell@example.org,0631970742,Durban,1989-05-28 00:00:00,5,Justin?Morgan,benjaminhowell@example.org,+27631970742,Durban,1989-05-28
+6,Daniel Anderson,aaronbranch@example.com,0825833664,Polokwane,2022-09-05,6,Daniel Anderson,aaronbranch@example.com,+27825833664,Polokwane,2022-05-09
+7,Jeffrey Mosley,wanderson@example.org,082067574,Bloemfontein,05/11/2008,7,Jeffrey Mosley,wanderson@example.org,+2782067574,Bloemfontein,2008-11-05
+8,Julie Schwartz,patricia75@example.com,083695607,Johannesburg,11/04/2021,8,Julie Schwartz,patricia75@example.com,+2783695607,Johannesburg,2021-04-11
+9,Hannah Powell,dmitchell@example.com,0615373692,East London,03/11/2012,9,Hannah Powell,dmitchell@example.com,+27615373692,East London,2012-11-03
+10,Cristian Wright,kelseymiller@example.com,083236119,Nelspruit,08-28-2023,10,Cristian Wright,kelseymiller@example.com,+2783236119,Nelspruit,
+11,Elizabeth Singh,victoriapruitt@example.org,082285153,Pretoria,2022-09-05,11,Elizabeth Singh,victoriapruitt@example.org,+2782285153,Pretoria,2022-05-09
+12,Jake Nelson,shannon55@example.net,0836373970,Nelspruit,24/09/2024,12,Jake Nelson,shannon55@example.net,+27836373970,Nelspruit,2024-09-24
+13,Rodney Manning,jessica24@example.net,063594054,Nelspruit,2020-02-29,13,Rodney Manning,jessica24@example.net,+2763594054,Nelspruit,2020-02-29
+14,Phillip Delgado,hamiltonnicole@example.com,063955335,Port Elizabeth,1995-10-25,14,Phillip Delgado,hamiltonnicole@example.com,+2763955335,Port Elizabeth,1995-10-25
+15,Margaret%Jacobson,hallwilliam@example.net,0710804702,Kimberley,2016-03-01,15,Margaret%Jacobson,hallwilliam@example.net,+27710804702,Kimberley,2016-01-03
+16,Susan Harrington,omarquez@example.com,0821758013,Polokwane,01-31-2020,16,Susan Harrington,omarquez@example.com,+27821758013,Polokwane,
+17,Samantha Sullivan,carl22@example.com,0719935632,Pretoria,23/07/2008,17,Samantha Sullivan,carl22@example.com,+27719935632,Pretoria,2008-07-23
+18,John Kemp,johnsonjeffrey@example.org,082339157,Kimberley,05-24-2025,18,John Kemp,johnsonjeffrey@example.org,+2782339157,Kimberley,
+19,James James,sarahrobinson@example.com,083808763,Nelspruit,01-11-2026,19,James James,sarahrobinson@example.com,+2783808763,Nelspruit,2026-11-01
+20,Justin Hill,kathryn33@example.net,0634676105,Port Elizabeth,12-14-2020,20,Justin Hill,kathryn33@example.net,+27634676105,Port Elizabeth,
