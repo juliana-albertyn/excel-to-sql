@@ -542,7 +542,7 @@ def validate_data(
                         col_name,
                         rows,
                         on_error,
-                        "Value out of range ({min_val} -> {max_val})",
+                        f"Value out of range ({min_val} -> {max_val})",
                     )
         elif _is_sql_string_type(sql_type):
             # check string length
