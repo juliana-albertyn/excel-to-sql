@@ -5,10 +5,11 @@
 # Global config #
 #---------------#
 
-project_name: excel_to_sql
-strict_validation: false # strict | permissive
-day_first_format: true
-currency_symbol: R
+runtime: 
+    project_name: excel_to_sql
+    currency_symbol: R
+    strict_validation: false # strict | permissive
+    day_first_format: true
 
 source:
     type: excel
