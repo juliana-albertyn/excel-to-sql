@@ -190,7 +190,7 @@ def col_to_money(
     # remove currency symbol and whitespace
     cleaned = (
         series.astype("string")
-        .str.replace(etl_context.currency_symbol, "", regex=False)
+        .str.removeprefix(etl_context.currency_symbol)
         .str.strip()
     )
 
