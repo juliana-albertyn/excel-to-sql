@@ -34,7 +34,8 @@ import src.excel_to_sql.context as context
 class ETLStages(IntEnum):
     """
     Enumeration of ETL processing stages used for NaN tracking and summaries.
-    """    
+    """
+
     LOADED = 1
     CLEANED = 2
     TRANSFORMED = 3
@@ -47,7 +48,7 @@ def str_to_bool(value: str | bool) -> bool:
 
     Accepts 'true', 'yes', '1' (case-insensitive). Falls back to Python
     truthiness for non-string values.
-    """    
+    """
     if isinstance(value, str):
         return value.strip().lower() in ("true", "yes", "1")
     return bool(value)  # fallback for non-strings
@@ -61,6 +62,7 @@ def validate_schema(pipeline_config: Dict[str, Any], logger: Logger) -> dict[str
     validation rules. Raises SchemaError on any incorrect or incomplete
     definitions. Returns a simplified schema structure.
     """
+
     def add_invalid(
         required_fields: list[str], config: dict[str, Any], invalid_fields: list[str]
     ) -> list[str]:
@@ -317,7 +319,7 @@ def update_nan_stats(
 
     Adds per-column NaN statistics to the running summary, using cleaned
     column names when available.
-    """    
+    """
     cleaned_suffix = etl_context.cleaned_suffix
     if cleaned_suffix is not None:
         first_time = True
@@ -355,7 +357,7 @@ def log_nan_stats(
 ) -> None:
     """
     Log a summary table of NaN counts across ETL stages for a single table.
-    """    
+    """
     df_stats = pd.DataFrame(nan_stats)
     summary = (
         df_stats.pivot(index="col_name", columns="stage", values="NaNs")
@@ -398,39 +400,52 @@ def load_pipeline_config(
 
     Reads the YAML file referenced in the project configuration, validates
     required sections, and returns a lowercase-keyed configuration dict.
-    """    
-    pipeline_config_file = project_config.get("config_file")
-    if pipeline_config_file is None:
+    """
+
+    def log_missing_config(description: str):
         error_context = errors.ErrorContext()
-        raise errors.ConfigError(
-            "Pipeline configuration file not specified", error_context
-        )
+        raise errors.ConfigError(f"{description} not given", error_context)
+
+    config_file = project_config.get("config_file")
+    if config_file is None:
+        error_context = errors.ErrorContext()
+        raise errors.ConfigError("Pipeline configuration file not given", error_context)
     try:
         # open the pipeline configuration file
-        pipeline_config_file = etl_context.config_dir / pipeline_config_file
+        pipeline_config_file = etl_context.config_dir / config_file
         with open(pipeline_config_file) as f:
             raw_pipeline_config = yaml.safe_load(f)
         pipeline_config = lower_keys(raw_pipeline_config)
 
         # load configurations
-        project_name = pipeline_config["project_name"]
-        strict_validation = pipeline_config["strict_validation"]
+        runtime_config = pipeline_config["runtime"]
+        if runtime_config is None:
+            log_missing_config("Runtime configuration")
         source_config = pipeline_config["source"]
+        if source_config is None:
+            log_missing_config("Source configuration")
         target_config = pipeline_config["target"]
+        if target_config is None:
+            log_missing_config("Target configuration")
         cleaning_rules = pipeline_config["cleaning"]
+        if cleaning_rules is None:
+            log_missing_config("Cleaning rules")
         mapping_config = pipeline_config["mappings"]
+        if mapping_config is None:
+            log_missing_config("Mapping configuration")
         columns_config = pipeline_config["columns"]
+        if columns_config is None:
+            log_missing_config("Column configuration")
 
-        etl_config = {
-            "project_name": project_name,
-            "strict_validation": strict_validation,
+        pipeline_config = {
+            "runtime": runtime_config,
             "source": source_config,
             "target": target_config,
             "cleaning": cleaning_rules,
             "mappings": mapping_config,
             "columns": columns_config,
         }
-        return lower_keys(etl_config)
+        return lower_keys(pipeline_config)
     except Exception as e:
         error_context = errors.ErrorContext(original_exception=e)
         raise errors.ConfigError("Error loading pipeline configuration", error_context)
@@ -494,12 +509,15 @@ def extend_context(
     row offset, and source file information.
     """
     try:
-        etl_context.project_name = pipeline_config.get("project_name", "excel_to_sql")
-        etl_context.strict_validation = pipeline_config.get("strict_validation", True)
-        etl_context.day_first_format = pipeline_config.get("day_first_format", True)
-        etl_context.currency_symbol = pipeline_config.get("currency_symbol", "")
-        header_row = pipeline_config.get("header_row", 1)
-        etl_context.row_offset = 1 + header_row
+        runtime_config = pipeline_config.get("runtime")
+        if runtime_config is None:
+            raise ValueError("Runtime configuration must be given")
+
+        etl_context.project_name = runtime_config.get("project_name", "")
+        etl_context.strict_validation = runtime_config.get("strict_validation", True)
+        etl_context.day_first_format = runtime_config.get("day_first_format", True)
+        etl_context.currency_symbol = runtime_config.get("currency_symbol", "")
+
         source = pipeline_config.get("source")
         if source is None:
             raise ValueError("Source must be given")
@@ -507,6 +525,9 @@ def extend_context(
         if source_file is None:
             raise ValueError("Source file must be given")
         etl_context.source_file = source_file
+        header_row = source.get("header_row", 1)
+        etl_context.row_offset = 1 + header_row
+
         return etl_context
     except Exception as e:
         error_context = errors.ErrorContext(original_exception=e)
@@ -520,7 +541,7 @@ def run_etl() -> None:
     Loads configuration, validates schema, extracts sheets, cleans,
     transforms, validates, finalises, and writes all tables. Logs progress
     and raises PipelineError on failure.
-    """    
+    """
     # set up the context
     etl_context = setup_context()
 
