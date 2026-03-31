@@ -52,7 +52,6 @@ patterns = {
 DateMinMaxType = Union[
     datetime.date, datetime.datetime, str, None
 ]  # str because 'today' can be used in the yaml
-NumericMinMaxType = Union[int, float, None]
 
 
 @dataclass
@@ -185,6 +184,9 @@ def action_validations(
     Logs warnings and errors, raises in strict mode, or drops rows in permissive mode.
     Returns the possibly modified DataFrame.
     """
+    if results.has_severity(Severity.FAIL) or results.has_severity(Severity.WARN): 
+        logger.info(f"Audit of validation warnings and failures for *** {table_name} ***:")
+        
     result = df
     if results.has_severity(Severity.FAIL):
         # log fails
@@ -333,13 +335,14 @@ def normalise_date(
 
 def date_range_rule(
     series: pd.Series,
+    allow_null: bool,
     min_date: DateMinMaxType,
     max_date: DateMinMaxType,
     etl_context: context.ETLContext,
 ) -> pd.Series:
     """
     Validate a Series of dates against optional min/max bounds.
-    Unparsable values fail.
+    Unparsable values fail unless allow_null=True.
     Returns a boolean mask.
     """
     s = pd.to_datetime(series, errors="coerce")
@@ -347,37 +350,57 @@ def date_range_rule(
     mindate = normalise_date(min_date, etl_context)
     maxdate = normalise_date(max_date, etl_context)
 
+    valid = s.notna()
     mask = pd.Series(True, index=series.index, dtype="boolean")
 
+    # apply min/max only to valid dates
     if mindate is not None:
-        mask &= s >= mindate
-    if maxdate is not None:
-        mask &= s <= maxdate
+        mask &= (~valid) | (s >= mindate)
 
-    # any unparsable dates (NaT) should fail
-    mask &= s.notna()
+    if maxdate is not None:
+        mask &= (~valid) | (s <= maxdate)
+
+    # final null handling
+    if allow_null:
+        # Nulls are allowed → only fail unparsable *non-null* values
+        mask &= (series.isna()) | valid
+    else:
+        # Nulls not allowed → must be a valid date
+        mask &= valid
 
     return mask
 
 
 def numeric_range_rule(
-    series: pd.Series, min_val: NumericMinMaxType, max_val: NumericMinMaxType
+    series: pd.Series,
+    allow_null: bool,
+    min_val: Optional[float],
+    max_val: Optional[float],
 ) -> pd.Series:
     """
     Validate numeric values against optional min/max bounds.
-    Unparsable values fail.
+    Unparsable values fail unless allow_null=True.
     Returns a boolean mask.
     """
     s = pd.to_numeric(series, errors="coerce")
+
+    valid = s.notna()
     mask = pd.Series(True, index=series.index, dtype="boolean")
 
+    # Apply min/max only to valid numeric values
     if min_val is not None:
-        mask &= s >= min_val
-    if max_val is not None:
-        mask &= s <= max_val
+        mask &= (~valid) | (s >= min_val)
 
-    # any unparsable dates (NaT) should fail
-    mask &= s.notna()
+    if max_val is not None:
+        mask &= (~valid) | (s <= max_val)
+
+    # Final null handling
+    if allow_null:
+        # Nulls allowed → pass if original value is null OR valid numeric
+        mask &= (series.isna()) | valid
+    else:
+        # Nulls not allowed → must be valid numeric
+        mask &= valid
 
     return mask
 
@@ -508,6 +531,7 @@ def validate_data(
                 errors.ErrorContext(table_name=table_name, column_name=col_name),
             )
 
+        allow_null = config.get("allow_null", True)
         if _is_sql_date_time_type(sql_type):  # date | datetime
             # check against min and max
             min_date = validation_config.get("min_value")
@@ -515,6 +539,7 @@ def validate_data(
             if min_date is not None or max_date is not None:
                 mask_date = date_range_rule(
                     df[cleaned_col],
+                    allow_null,
                     min_date=min_date,
                     max_date=max_date,
                     etl_context=etl_context,
@@ -533,9 +558,10 @@ def validate_data(
             max_val = validation_config.get("max_value", None)
             min_val = validation_config.get("min_value", None)
             if min_val is not None or max_val is not None:
-                mask_invalid_numeric = numeric_range_rule(
-                    df[cleaned_col], min_val=min_val, max_val=max_val
+                mask_numeric = numeric_range_rule(
+                    df[cleaned_col], allow_null, min_val=min_val, max_val=max_val
                 )
+                mask_invalid_numeric = ~mask_numeric
                 if mask_invalid_numeric.any():
                     rows = (df.index[mask_invalid_numeric] + row_offset).tolist()
                     results.add_issue(
