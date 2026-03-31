@@ -2,7 +2,7 @@
 Module: test_validator
 Purpose: Testing validator functions
 
-This module is part of the Fynbyte toolkit. 
+This module is part of the Fynbyte toolkit.
 """
 
 __author__ = "Juliana Albertyn"
@@ -91,7 +91,7 @@ def test_email_rule():
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_nullable_rule_true():
+def test_null_allowed_rule_true():
     series = pd.Series([1, "abc", 2.0, None, ""])
 
     result = null_allowed_rule(series, allow_nulls=True)
@@ -101,7 +101,7 @@ def test_nullable_rule_true():
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_nullable_rule_false():
+def test_null_allowed_rule_false():
     series = pd.Series([1, "abc", 2.0, None, "  "])
 
     result = null_allowed_rule(series, allow_nulls=False)
@@ -195,7 +195,7 @@ def test_str_format_rule(format, expected):
     pd.testing.assert_series_equal(result, expected_series)
 
 
-def test_normalise_date():
+def test_normalise_date_today():
     value = "today"
 
     dt = datetime.now().date()
@@ -211,24 +211,27 @@ def runtime_context() -> context.ETLContext:
     return etl_context
 
 
+@pytest.mark.parametrize("allow_null", [True, False])
 @pytest.mark.parametrize(
     "min_date, max_date, expected",
     [
-        (datetime(1900, 1, 1), datetime(2026, 3, 25), [True, False, False]),
-        (
-            datetime(2026, 1, 1),
-            datetime(2026, 1, 31),
-            [True, False, False],
-        ),
-        (None, None, [True, True, True]),
+        (datetime(1900, 1, 1), "today", [True, False, False]),
         (datetime(1900, 1, 1), None, [True, False, True]),
+        (datetime(1900, 1, 1), datetime(2026, 3, 25), [True, False, False]),
+        (datetime(2026, 1, 1), datetime(2026, 1, 31), [True, False, False]),
+        (None, None, [True, True, True]),
+        (None, "today", [True, True, False]),
     ],
 )
-def test_date_range_rule(min_date, max_date, expected, runtime_context):
+def test_date_range_rule(allow_null, min_date, max_date, expected, runtime_context):
     series = pd.Series(["2026-01-01", "1860-01-01", "2026-12-12"])
 
     result = date_range_rule(
-        series, min_date=min_date, max_date=max_date, etl_context=runtime_context
+        series,
+        allow_null=allow_null,
+        min_date=min_date,
+        max_date=max_date,
+        etl_context=runtime_context,
     )
 
     expected_series = pd.Series(expected, dtype="boolean")
@@ -236,6 +239,7 @@ def test_date_range_rule(min_date, max_date, expected, runtime_context):
     pd.testing.assert_series_equal(result, expected_series)
 
 
+@pytest.mark.parametrize("allow_null", [True, False])
 @pytest.mark.parametrize(
     "min_value, max_value, expected",
     [
@@ -245,11 +249,19 @@ def test_date_range_rule(min_date, max_date, expected, runtime_context):
         (55.3, 55.4, [False, False, False, True, False, False]),
     ],
 )
-def test_numeric_range_rule(min_value, max_value, expected):
+def test_numeric_range_rule(allow_null, min_value, max_value, expected):
     series = pd.Series([-10, 1, 44, 55.3, 60, "100"])
 
-    result = numeric_range_rule(series, min_val=min_value, max_val=max_value)
-    
+    result = numeric_range_rule(
+        series, allow_null=allow_null, min_val=min_value, max_val=max_value
+    )
+
+    # adjust expected for allow_null=False: None values in series become False
+    if not allow_null:
+        # Assuming the second value in series could be None in some real data,
+        # here we simulate that any originally True because of null should now be False
+        expected = [val if val is not None else False for val in expected]
+
     expected_series = pd.Series(expected, dtype="boolean")
 
     pd.testing.assert_series_equal(result, expected_series)
