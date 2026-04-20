@@ -11,7 +11,7 @@ __date__ = "2026-03-29"
 
 
 import pandas as pd
-from src.excel_to_sql.transformer import normalise_phone_numbers
+from src.transformer import normalise_phone_numbers
 
 
 def test_normalise_phone_numbers_basic():

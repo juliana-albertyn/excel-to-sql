@@ -16,9 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from logging import DEBUG
 
-import src.excel_to_sql.context as context
-import src.excel_to_sql.logging_setup as logging_setup
-from src.excel_to_sql.validator import (
+import src.context as context
+import src.logging_setup as logging_setup
+from src.validator import (
     patterns,
     email_rule,
     null_allowed_rule,

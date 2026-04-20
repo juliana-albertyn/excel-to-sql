@@ -16,10 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from logging import DEBUG
 
-import src.excel_to_sql.errors as errors
-import src.excel_to_sql.context as context
-import src.excel_to_sql.logging_setup as logging_setup
-from src.excel_to_sql.cleaner import (
+import src.errors as errors
+import src.context as context
+import src.logging_setup as logging_setup
+from src.cleaner import (
     str_to_bool,
     col_to_date,
     col_to_datetime,

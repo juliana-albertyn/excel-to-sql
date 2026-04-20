@@ -8,6 +8,6 @@ __author__ = "Juliana Albertyn"
 __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-02-17"
 
-from src.excel_to_sql import pipeline
+from src import pipeline
 
 pipeline.run_etl()
