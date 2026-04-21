@@ -1,7 +1,7 @@
 source:
   file_name: dummy.xlsx
   input_type: excel
-  header_row: 1
+  header_rows: 1
 
 runtime:
   strict_validation: false
@@ -11,3 +11,8 @@ mappings:
     sheet_name: Test
     schema_file: test_schema
     target_table: test_table
+
+cleaning:
+    trim_whitespace: true
+    standardise_nulls: true
+    remove_blank_rows: false

@@ -19,7 +19,6 @@ from datetime import datetime
 from enum import IntEnum
 
 import src.logging_setup as logging_setup
-import src.cleaner as cleaner
 import src.transformer as transformer
 import src.validator as validator
 import src.finaliser as finaliser
@@ -30,6 +29,7 @@ import src.context as context
 from config.project_config import ProjectConfig
 from config.pipeline_config import PipelineConfig
 from src.extractor import Extractor
+from src.cleaner import Cleaner
 
 from schemas.table_schema import TableSchema
 
@@ -54,7 +54,6 @@ def update_nan_stats(
 ) -> None:
     """
     Record NaN counts for a DataFrame at a specific ETL stage.
-
     Adds per-column NaN statistics to the running summary, using cleaned
     column names when available.
     """
@@ -65,6 +64,7 @@ def update_nan_stats(
             if col.endswith(cleaned_suffix):
                 first_time = False
                 break
+
         for col_name in df.columns:
             if first_time:
                 stats = {
@@ -181,7 +181,7 @@ def run_etl() -> None:
             else:
                 logger.info("Applying PERMISSIVE validation")
 
-        extractor = Extractor(project_config, etl_context, logger)
+        extractor = Extractor(project_config, etl_context)
 
         # load the schemas
         if project_config.mappings is not None:
@@ -206,13 +206,13 @@ def run_etl() -> None:
                 )
 
                 # Step 3: clean
-                df = cleaner.clean_data(
-                    df,
-                    pipeline_config["cleaning"],
-                    table_name,
-                    pipeline_config["columns"][table_name],
-                    etl_context,
+                cleaner = Cleaner(
+                    df=df,
+                    project_config=project_config,
+                    table_schema=schema,
+                    etl_context=etl_context,
                 )
+                df = cleaner.clean_data()
                 update_nan_stats(
                     nan_stats, ETLStages.CLEANED, "After cleaning", etl_context, df
                 )

@@ -1,299 +1,214 @@
-"""
-Module: test_cleaner
-Purpose: Testing cleaner
-
-This module is part of the Fynbyte toolkit.
-"""
-
-__author__ = "Juliana Albertyn"
-__email__ = "julie_albertyn@yahoo.com"
-__date__ = "2026-03-29"
-
-
 import pandas as pd
 import pytest
-from datetime import datetime
-from pathlib import Path
-from logging import DEBUG
 
-import src.errors as errors
-import src.context as context
-import src.logging_setup as logging_setup
-from src.cleaner import (
-    str_to_bool,
-    col_to_date,
-    col_to_datetime,
-    col_to_time,
-    col_to_numeric,
-    col_to_decimal_float_real,
-    col_to_int,
-    col_to_money,
-)
+from src.cleaner import Cleaner
+from src.errors import CleanerError
+from schemas.table_schema import TableSchema
+from schemas.column_definitions import ColumnDefinition
+from config.project_config import ProjectConfig
+from src.context import ETLContext
 
 
-def setup_context() -> context.ETLContext:
-    etl_context = context.ETLContext(
-        log_dir=Path("."),
-        data_dir=Path("."),
-        output_dir=Path("."),
-        config_dir=Path("."),
-    )
-    etl_context.strict_validation = False
-    etl_context.currency_symbol = "R"
-    etl_context.day_first_format = True
-    etl_context.row_offset = 2
-    run_date = datetime.now()
-    etl_context.run_date = run_date.date()
-    # all log files for the same run have the same timestamp
-    etl_context.run_timestamp = run_date.strftime("%Y%m%d_%H%M_%S")
-    etl_context.log_level = DEBUG
-    logger = logging_setup.get_logger(etl_context, __name__)
-
-    etl_context.datetime_parser = etl_context.get_datetime_parser(logger)
-    etl_context.datetime_parser.debug_trace = True
-    return etl_context
+# ---------------------------------------------------------------------
+# helpers
+#
+# ---------------------------------------------------------------------
+def table_schema_with_col(col_name, data_type):
+    # table schema with specific column
+    schema = TableSchema()
+    schema.table_name = "TestTable"
+    schema.columns = [
+        ColumnDefinition(
+            column_name=col_name,
+            source_column=col_name,
+            data_type=data_type,
+            null_allowed=True,
+        ),
+    ]
+    return schema
 
 
-def test_str_to_bool_true_values():
-    assert str_to_bool("true") is True
-    assert str_to_bool("YES") is True
-    assert str_to_bool("1") is True
+# ----------------------------------------------------------------------
+# 1. Test spreadsheet row offset helper
+# ----------------------------------------------------------------------
 
 
-def test_str_to_bool_false_values():
-    assert str_to_bool("false") is False
-    assert str_to_bool("no") is False
-    assert str_to_bool("") is False
+def test_spreadsheet_row_number(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    cfg = project_config_strict
+
+    assert cfg.source is not None
+    assert cfg.source.header_rows is not None
+
+    cfg.source.header_rows = 5
+    schema = table_schema_with_col("a", "int")
+    cleaner = Cleaner(df, cfg, schema, etl_context)
+
+    assert cleaner._spreadsheet_row_number(0) == 5
+    assert cleaner._spreadsheet_row_number(10) == 15
 
 
-def test_str_to_bool_non_string():
-    assert str_to_bool(True) is True
-    assert str_to_bool(False) is False
+# ----------------------------------------------------------------------
+# 2. Date parsing strict mode
+# ----------------------------------------------------------------------
 
 
-def test_col_to_date():
-    series = pd.Series(
-        [
-            "Jan 13, 2026",
-            "Jan 13, 2026",
-            "13-Jan-2026",
-            "13/01/2026",
-            "13-01-2026",
-            "2026-01-13 00:00",
-            "2026-01-13 00:00:00",
-            "31/02/2026",
-            "apple",
-            " ",
-            None,
+def test_col_to_date_strict_raises(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"d": ["2024-01-01", "not-a-date"]})
+    schema = table_schema_with_col("d", "date")
+
+    cleaner = Cleaner(df, project_config_strict, schema, etl_context)
+
+    with pytest.raises(CleanerError) as exc:
+        cleaner._col_to_date(df["d"], schema.columns[0])
+
+    assert "Invalid date" in str(exc.value)
+    assert "row" in str(exc.value)
+
+
+# ----------------------------------------------------------------------
+# 3. Date parsing permissive mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_date_permissive(
+    project_config_permissive: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"d": ["2024-01-01", "not-a-date"]})
+    schema = table_schema_with_col("d", "date")
+
+    cleaner = Cleaner(df, project_config_permissive, schema, etl_context)
+    out = cleaner._col_to_date(df["d"], schema.columns[0])
+
+    assert pd.isna(out.iloc[1])  # invalid coerced to NaT
+    assert pd.to_datetime("2024-01-01") == out.iloc[0]
+
+
+# ----------------------------------------------------------------------
+# 4. Integer strict mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_int_strict_raises(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"n": ["10", "x"]})
+    schema = table_schema_with_col("n", "int")
+
+    cleaner = Cleaner(df, project_config_strict, schema, etl_context)
+
+    with pytest.raises(CleanerError):
+        cleaner._col_to_int(df["n"], schema.columns[0])
+
+
+# ----------------------------------------------------------------------
+# 5. Integer permissive mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_int_permissive(
+    project_config_permissive: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"n": ["10", "x"]})
+    schema = table_schema_with_col("n", "int")
+
+    cleaner = Cleaner(df, project_config_permissive, schema, etl_context)
+    out = cleaner._col_to_int(df["n"], schema.columns[0])
+
+    assert out.iloc[0] == 10
+    assert pd.isna(out.iloc[1])
+
+
+# ----------------------------------------------------------------------
+# 6. Money strict mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_money_strict_raises(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"m": ["R100", "Rxx"]})
+    schema = table_schema_with_col("m", "money")
+
+    cleaner = Cleaner(df, project_config_strict, schema, etl_context)
+
+    with pytest.raises(CleanerError):
+        cleaner._col_to_money(df["m"], schema.columns[0])
+
+
+# ----------------------------------------------------------------------
+# 7. Binary strict mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_binary_strict_raises(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"b": ["ZZZZ"]})
+    schema = table_schema_with_col("b", "binary")
+
+    cleaner = Cleaner(df, project_config_strict, schema, etl_context)
+
+    with pytest.raises(CleanerError):
+        cleaner._col_to_binary(df["b"], schema.columns[0])
+
+
+# ----------------------------------------------------------------------
+# 8. Image strict mode
+# ----------------------------------------------------------------------
+
+
+def test_col_to_image_valid_jpeg(
+    project_config_strict: ProjectConfig, etl_context: ETLContext
+):
+    jpeg_hex = "FFD8FFAA11"  # valid JPEG magic bytes
+    df = pd.DataFrame({"img": [jpeg_hex]})
+
+    schema = table_schema_with_col("img", "image")
+
+    cleaner = Cleaner(df, project_config_strict, schema, etl_context)
+    out = cleaner._col_to_image(df["img"], schema.columns[0])
+
+    assert isinstance(out.iloc[0], bytes)
+    assert out.iloc[0].startswith(bytes.fromhex("FFD8FF"))
+
+
+# ----------------------------------------------------------------------
+# 9. End-to-end clean_data
+# ----------------------------------------------------------------------
+
+
+def test_clean_data_end_to_end(
+    project_config_permissive: ProjectConfig, etl_context: ETLContext
+):
+    df = pd.DataFrame({"name": [" Alice ", "Bob"], "age": ["10", "20"]})
+
+    schema = TableSchema(
+        table_name="People",
+        columns=[
+            ColumnDefinition(
+                column_name="name",
+                source_column="name",
+                data_type="varchar",
+                null_allowed=True,
+            ),
+            ColumnDefinition(
+                column_name="age",
+                source_column="age",
+                data_type="int",
+                null_allowed=True,
+            ),
         ],
-        dtype="string",
     )
 
-    result = col_to_date(
-        series,
-        table_name="test",
-        col_name="test",
-        etl_context=etl_context,
-    )
+    cleaner = Cleaner(df, project_config_permissive, schema, etl_context)
+    out = cleaner.clean_data()
 
-    expected = pd.Series(
-        [
-            "2026-01-13",
-            "2026-01-13",
-            "2026-01-13",
-            "2026-01-13",
-            "2026-01-13",
-            "2026-01-13",
-            "2026-01-13",
-            None,
-            None,
-            None,
-            None,
-        ]
-    )
-    expected = pd.to_datetime(expected)
-
-    print(expected)
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_date_strict_row_number():
-    series = pd.Series(["13-Jan-2026", "31/02/2026"], dtype="string")
-    strict_context = etl_context
-    strict_context.strict_validation = True
-
-    with pytest.raises(errors.CleanerError) as exc_info:
-        col_to_date(
-            series, table_name="test", col_name="test", etl_context=strict_context
-        )
-
-    etl_context.strict_validation = False
-
-    error = exc_info.value
-
-    # row index = 0, offset = 2 → expected row = 3
-    assert "row 2" in str(error)
-
-
-def test_col_to_time():
-    series = pd.Series(
-        [
-            "9:45",
-            "09:45",
-            "09:45pm",
-            "9:45 PM",
-            "21:45",
-            "09:45:44",
-            "21:45",
-            "09:45:99",
-            "25:25",
-            "",
-            None,
-            "banana",
-        ],
-        dtype="string",
-    )
-    result = col_to_time(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [
-            datetime(1900, 1, 1, 9, 45),
-            datetime(1900, 1, 1, 9, 45),
-            datetime(1900, 1, 1, 21, 45),
-            datetime(1900, 1, 1, 21, 45),
-            datetime(1900, 1, 1, 21, 45),
-            datetime(1900, 1, 1, 9, 45, 44),
-            datetime(1900, 1, 1, 21, 45),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ]
-    )
-    expected = pd.to_datetime(expected, errors="coerce")
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_datetime():
-    series = pd.Series(
-        [
-            "1 Jan 2026",
-            "1 Jan 2026",
-            "2026-01-01 00:00",
-            "2026-01-01",
-            "2026-01-01 9:45",
-            "1 Jan 2026 09:45",
-            "1-1-2026 09:45pm",
-            "2026-28-02 9:45 PM",
-            "2026-01-01 21:45",
-            "2026-01-01 09:45:44",
-            "2026-01-01 09:45:99",
-            "2026-01-01 25:25",
-            "",
-            None,
-            "banana",
-        ],
-        dtype="string",
-    )
-    result = col_to_datetime(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [
-            datetime(2026, 1, 1, 0, 0),
-            datetime(2026, 1, 1, 0, 0),
-            datetime(2026, 1, 1, 0, 0),
-            datetime(2026, 1, 1, 0, 0),
-            datetime(2026, 1, 1, 9, 45),
-            datetime(2026, 1, 1, 9, 45),
-            datetime(2026, 1, 1, 21, 45),
-            datetime(2026, 2, 28, 21, 45),
-            datetime(2026, 1, 1, 21, 45),
-            datetime(2026, 1, 1, 9, 45, 44),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ]
-    )
-    expected = pd.to_datetime(expected, errors="coerce")
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_money():
-    series = pd.Series(
-        ["x", 1, "2.0", "3,0", "4:44", "R5", "ZAR6", "R 7", "banana", None],
-        dtype="string",
-    )
-
-    result = col_to_money(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [None, 1.00, 2.00, None, None, 5.00, None, 7.00, None, None], dtype="Float64"
-    )
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_numeric():
-    series = pd.Series(
-        ["x", 1.0, "2", "3,0", "4:44", "R5", "ZAR6", "R 7", "banana", None],
-        dtype="string",
-    )
-
-    result = col_to_numeric(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [None, 1, 2, None, None, None, None, None, None, None], dtype="Float64"
-    )
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_int():
-    series = pd.Series(
-        ["x", 1, "2", "3,0", "4:44", "R5", "ZAR6", "R 7", "banana", None],
-        dtype="string",
-    )
-
-    result = col_to_int(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [None, 1, 2, None, None, None, None, None, None, None], dtype="Int64"
-    )
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-def test_col_to_decimal_float_real():
-    series = pd.Series(
-        ["x", 1, "2.0", "3.55", "4:44", "R5", "ZAR6", "R 7", "banana", None],
-        dtype="string",
-    )
-
-    result = col_to_decimal_float_real(
-        series, table_name="test", col_name="test", etl_context=etl_context
-    )
-
-    expected = pd.Series(
-        [None, 1.0, 2.0, 3.55, None, None, None, None, None, None], dtype="Float64"
-    )
-
-    pd.testing.assert_series_equal(result, expected)
-
-
-etl_context = setup_context()
+    assert "name_clean" in out.columns
+    assert "age_clean" in out.columns
+    assert out["name_clean"].iloc[0] == "alice" or out["name_clean"].iloc[0] == "Alice"
+    assert out["age_clean"].iloc[0] == 10

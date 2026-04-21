@@ -34,10 +34,10 @@ def mock_excel(monkeypatch):
 # --------------------------------------------------------------------
 # TEST: successful load + rename
 # --------------------------------------------------------------------
-def test_load_excel_success(mock_excel, extractor, table_schema):
+def test_load_excel_success(mock_excel, extractor, table_schema_default):
 
     df = extractor.from_excel(
-        table_name="People", sheet_name="Sheet1", table_schema=table_schema
+        table_name="People", sheet_name="Sheet1", table_schema=table_schema_default
     )
 
     expected = ["Name", "Email"]
@@ -50,7 +50,7 @@ def test_load_excel_success(mock_excel, extractor, table_schema):
 # --------------------------------------------------------------------
 # TEST: missing sheet triggers ExtractorError
 # --------------------------------------------------------------------
-def test_missing_sheet_raises(mock_excel, monkeypatch, extractor, table_schema):
+def test_missing_sheet_raises(mock_excel, monkeypatch, extractor, table_schema_default):
     # Override sheet list to simulate missing sheet
     class FakeExcelFile:
         sheet_names = ["OtherSheet"]
@@ -61,7 +61,7 @@ def test_missing_sheet_raises(mock_excel, monkeypatch, extractor, table_schema):
         extractor.from_excel(
             table_name="People",
             sheet_name="Sheet1",
-            table_schema=table_schema,
+            table_schema=table_schema_default,
         )
 
     assert "Worksheet 'Sheet1' not found" in str(exc.value)
@@ -70,7 +70,9 @@ def test_missing_sheet_raises(mock_excel, monkeypatch, extractor, table_schema):
 # --------------------------------------------------------------------
 # TEST: unexpected columns triggers ExtractorError when strict_validation=True
 # --------------------------------------------------------------------
-def test_unexpected_columns_strict(mock_excel, extractor, project_config, table_schema):
+def test_unexpected_columns_strict(
+    mock_excel, extractor, project_config, table_schema_default
+):
 
     project_config.runtime.strict_validation = True
 
@@ -78,7 +80,7 @@ def test_unexpected_columns_strict(mock_excel, extractor, project_config, table_
         extractor.from_excel(
             table_name="People",
             sheet_name="Sheet1",
-            table_schema=table_schema,
+            table_schema=table_schema_default,
         )
 
     assert "Unexpected column names" in str(exc.value)

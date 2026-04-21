@@ -14,14 +14,37 @@ def extractor(project_config, etl_context):
 
 @pytest.fixture
 def project_config():
+    # just reads the yaml file
     config_path = Path(__file__).parent / "data" / "project.yaml"
 
     return ProjectConfig.from_yaml(config_path)
 
 
 @pytest.fixture
-def table_schema():
+def project_config_strict():
+    # read the yaml file and set to strict validation
+    config_path = Path(__file__).parent / "data" / "project.yaml"
+    pc = ProjectConfig.from_yaml(config_path)
+    assert pc.runtime is not None
+    pc.runtime.strict_validation = True
+    return pc
+
+
+@pytest.fixture
+def project_config_permissive():
+    # read the yaml file and set to permissive validation
+    config_path = Path(__file__).parent / "data" / "project.yaml"
+    pc = ProjectConfig.from_yaml(config_path)
+    assert pc.runtime is not None
+    pc.runtime.strict_validation = False
+    return pc
+
+
+@pytest.fixture
+def table_schema_default():
+    # default table schema
     schema = TableSchema()
+    schema.table_name = "Test"
     schema.columns = [
         ColumnDefinition(
             column_name="Name",
@@ -41,9 +64,13 @@ def table_schema():
 
 @pytest.fixture
 def etl_context():
-    return ETLContext(
+    ctx = ETLContext(
         log_dir=Path("."),
         data_dir=Path("."),
         output_dir=Path("."),
         config_dir=Path("."),
+        cleaned_suffix="_clean",
+        currency_symbol="R",
     )
+    ctx.datetime_parser = ctx.get_datetime_parser(None)
+    return ctx
