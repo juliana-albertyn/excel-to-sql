@@ -32,7 +32,7 @@ class RuntimeConfig:
 class SourceFileConfig:
     file_name: str
     input_type: Literal["excel"] = "excel"  # only one option for now
-    header_rows: int | None = None
+    header_rows: int = 0
 
     def __post_init__(self):
         if self.header_rows is not None and self.header_rows < 0:
