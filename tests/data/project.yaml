@@ -1,0 +1,13 @@
+source:
+  file_name: dummy.xlsx
+  input_type: excel
+  header_row: 1
+
+runtime:
+  strict_validation: false
+
+mappings:
+  test:
+    sheet_name: Test
+    schema_file: test_schema
+    target_table: test_table
