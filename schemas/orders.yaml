@@ -1,0 +1,48 @@
+table_name: orders
+
+columns:
+
+    order_id:
+        source_column: order_id
+        data_type: int
+        primary_key: true
+        required: true
+        allow_null: false
+        validation:
+            min_value: 100
+
+    customer_id:
+        source_column: customer_id
+        data_type: int
+        required: true
+        foreign_key: customers.customer_id
+        allow_null: false
+
+    order_date:
+        source_column: order_date
+        data_type: date
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1900-01-01
+            max_value: today
+            on_error: fail # fail | drop | warn
+
+    order_status:
+        source_column: status
+        data_type: varchar(10)
+        required: true
+        allow_null: true
+        value_mapping:
+            completed:
+                - c
+                - complete
+                - done
+                - closed
+                - completed
+            pending:
+                - p
+                - pending
+            cancelled:
+                - x
+                - cancelled

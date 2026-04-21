@@ -1,0 +1,40 @@
+table_name: products
+
+columns:
+    product_id:
+        source_column: product_id
+        data_type: int
+        primary_key: true
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1001
+
+    product_name:
+        source_column: product_name
+        data_type: varchar(50)
+        case: title # options: lower, upper, title, asis
+        required: true
+        allow_null: false
+        validation:
+            format: product_name
+            on_error: fail # fail | drop | warn
+
+    product_price:
+        source_column: product_price
+        data_type: money
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1
+            max_value: 1000000
+            on_error: fail # fail | drop | warn
+
+    stock_quantity:
+        source_column: stock_quantity
+        data_type: int
+        required: true
+        allow_null: true
+        validation:
+            min_value: 0
+            max_value: 1000000

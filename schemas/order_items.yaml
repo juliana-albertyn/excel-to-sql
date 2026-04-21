@@ -1,0 +1,54 @@
+table_name: order_items
+
+columns:
+    order_item_id:
+        source_column: order_item_id
+        data_type: int
+        primary_key: true
+        allow_null: false
+        required: true
+
+    order_id:
+        source_column: order_id
+        data_type: int
+        required: true
+        allow_null: false
+        foreign_key: orders.order_id
+
+    product_id:
+        source_column: product_id
+        data_type: int
+        required: true
+        allow_null: false
+        foreign_key: products.product_id
+
+    quantity:
+        source_column: quantity
+        data_type: int
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1
+            max_value: 1000000
+            on_error: fail # fail | drop | warn
+
+    unit_price:
+        source_column: unit_price
+        data_type: money
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1
+            max_value: 1000000.00
+            on_error: fail # fail | drop | warn
+
+    total_price:
+        source_column: total_price
+        data_type: money
+        allow_null: true
+        validation:
+            derived_from:
+                formula: "quantity * unit_price"
+                depends_on:
+                    - quantity
+                    - unit_price

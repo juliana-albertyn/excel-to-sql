@@ -1,0 +1,64 @@
+#--------------#
+# Column rules #
+#--------------#
+# NOTE: 
+# required means that the column must be present in the spreadsheet
+# allow_null means the column does not have to have a value
+
+table_name: customers
+
+columns:
+    customer_id:
+        source_column: id
+        data_type: int
+        primary_key: true
+        required: true
+        allow_null: false
+        validation:
+            min_value: 1
+
+    customer_name:
+        source_column: name
+        data_type: varchar(50)
+        case: title # options: lower, upper, title, asis
+        required: true
+        allow_null: true
+        validation:
+            format: person_name
+            on_error: warn # fail | drop | warn
+
+    email:
+        source_column: email
+        data_type: varchar(255)
+        case: lower # options: lower, upper, title, asis
+        required: true
+        allow_null: false
+        validation:
+            format: email
+            check_deliverability: false
+            on_error: warn # fail | drop | warn
+
+    mobile:
+        source_column: mobile
+        data_type: varchar(20)
+        required: true
+        allow_null: false
+        validation:
+            format: E.164
+            allow_local: true
+            dialling_prefix: "+27"
+
+    city:
+        source_column: city
+        data_type: varchar(30)
+        case: title # options: lower, upper, title, asis
+        required: true
+        allow_null: true
+
+    join_date:
+        source_column: join_date
+        data_type: date
+        allow_null: true
+        validation:
+            min_value: 1900-01-01
+            max_value: today

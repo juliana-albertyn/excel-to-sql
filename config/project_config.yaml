@@ -1,15 +1,59 @@
 # excel_to_sql project configuration
 
+
 #---------------#
 # project config #
 #---------------#
-project_name: excel_to_sql
-config_file: pipeline_config.yaml
+runtime: 
+    project_name: excel_to_sql
+    pipeline_config: pipeline_config.yaml
+    currency_symbol: R
+    strict_validation: false # strict | permissive
+    day_first_format: true
+
+source:
+    input_type: excel
+    file_name: messy_orders.xlsx
+    header_rows: 1
+
+#----------------#
+# Cleaning rules #
+#----------------#
+cleaning:
+    trim_whitespace: true
+    standardise_nulls: true
+    remove_blank_rows: true
 
 #----------------#
 # Output settings #
 #----------------#
-write_sql: true
-exports:
-  - csv
-  - excel
+output:
+    write_sql: true
+    exports:
+    - csv
+    - excel
+
+#-----------------------#
+# Sheet → table mapping #
+#-----------------------#
+
+mappings:
+  customers:
+    sheet_name: Customers
+    schema_file: schemas/customers.yaml
+    target_table: customers
+
+  products:
+    sheet_name: Products
+    schema_file: schemas/products.yaml
+    target_table: products
+
+  orders:
+    sheet_name: Orders
+    schema_file: schemas/orders.yaml
+    target_table: orders
+
+  order_items:
+    sheet_name: OrderItems
+    schema_file: schemas/order_items.yaml
+    target_table: order_items

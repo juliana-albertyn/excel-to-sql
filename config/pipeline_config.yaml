@@ -2,275 +2,36 @@
 # sql first configuation
 
 #---------------#
-# Global config #
+# Target config #
 #---------------#
 
-runtime: 
-    project_name: excel_to_sql
-    currency_symbol: R
-    strict_validation: false # strict | permissive
-    day_first_format: true
+active_target: "sqlite"    
 
-source:
-    type: excel
-    file: messy_orders.xlsx
-    header_row: 1
+targets:
+    mssql:
+        driver: "ODBC Driver 17 for SQL Server"
+        server: "localhost"
+        database_name: "order_management"
+        authentication:
+            type: "windows" # "sql" or "windows"
+            username: "my_user"
+            password: "my_password"
+        schema: "dbo"
+        if_exists: "append"
+        batch_size: 1000
+        fast_executemany: true
 
-target:
-    db_type: mssql
-    driver: "ODBC Driver 17 for SQL Server"
-    server: "localhost"
-    database: "order_management"
-    authentication:
-        type: "windows" # "sql" or "windows"
-        username: "my_user"
-        password: "my_password"
-    schema: "dbo"
-    if_exists: "append"
-    batch_size: 1000
-    fast_executemany: true
+    sqlite:
+        database_name: "order_management"
+        if_exists: "replace"   # or "append"
+        batch_size: 1000
 
-#----------------#
-# Cleaning rules #
-#----------------#
-
-cleaning:
-    trim_whitespace: true
-    standardise_nulls: true
-    remove_blank_rows: true
-
-#-----------------------#
-# Sheet → table mapping #
-#-----------------------#
-
-mappings:
-    customers:
-        sheet_name: Customers
-        target_table: customers
-
-    products:
-        sheet_name: Products
-        target_table: products
-
-    orders:
-        sheet_name: Orders
-        target_table: orders
-
-    order_items:
-        sheet_name: OrderItems
-        target_table: order_items
-
-#-----------------------------#
-# Notes about SQL data types  #
-# Not all data types included #
-#-----------------------------#
-
-# SQL data types
-# Exact numerics: tinyint, smallint, int, bigint, bit, decimal/numeric, money, smallmoney
-# Approximate numerics: float, real
-# Date and time: date, time, datetime
-# Character strings: char, varchar, text
-# Unicode character strings: nchar, nvarchar, ntext
-# Binary strings: binary, varbinary, image
-
-#--------------#
-# Column rules #
-#--------------#
-# NOTE: 
-# required means that the column must be present in the spreadsheet
-# allow_null means the column does not have to have a value
-
-columns:
-    customers:
-        customer_id:
-            source_column: id
-            data_type: int
-            primary_key: true
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1
-
-        customer_name:
-            source_column: name
-            data_type: varchar(50)
-            case: title # options: lower, upper, title, asis
-            required: true
-            allow_null: true
-            validation:
-                format: person_name
-                on_error: warn # fail | drop | warn
-
-        email:
-            source_column: email
-            data_type: varchar(255)
-            case: lower # options: lower, upper, title, asis
-            required: true
-            allow_null: false
-            validation:
-                format: email
-                check_deliverability: false
-                on_error: warn # fail | drop | warn
-
-        mobile:
-            source_column: mobile
-            data_type: varchar(20)
-            required: true
-            allow_null: false
-            validation:
-                format: E.164
-                allow_local: true
-                dialling_prefix: "+27"
-
-        city:
-            source_column: city
-            data_type: varchar(30)
-            case: title # options: lower, upper, title, asis
-            required: true
-            allow_null: true
-
-        join_date:
-            source_column: join_date
-            data_type: date
-            allow_null: true
-            validation:
-                min_value: 1900-01-01
-                max_value: today
-
-    products:
-        product_id:
-            source_column: product_id
-            data_type: int
-            primary_key: true
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1001
-
-        product_name:
-            source_column: product_name
-            data_type: varchar(50)
-            case: title # options: lower, upper, title, asis
-            required: true
-            allow_null: false
-            validation:
-                format: product_name
-                on_error: fail # fail | drop | warn
-
-        product_price:
-            source_column: product_price
-            data_type: money
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1
-                max_value: 1000000
-                on_error: fail # fail | drop | warn
-
-        stock_quantity:
-            source_column: stock_quantity
-            data_type: int
-            required: true
-            allow_null: true
-            validation:
-                min_value: 0
-                max_value: 1000000
-
-    orders:
-        order_id:
-            source_column: order_id
-            data_type: int
-            primary_key: true
-            required: true
-            allow_null: false
-            validation:
-                min_value: 100
-
-        customer_id:
-            source_column: customer_id
-            data_type: int
-            required: true
-            foreign_key: customers.customer_id
-            allow_null: false
-
-        order_date:
-            source_column: order_date
-            data_type: date
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1900-01-01
-                max_value: today
-                on_error: fail # fail | drop | warn
-
-        order_status:
-            source_column: status
-            data_type: varchar(10)
-            required: true
-            allow_null: true
-            value_mapping:
-                completed:
-                    - c
-                    - complete
-                    - done
-                    - closed
-                    - completed
-                pending:
-                    - p
-                    - pending
-                cancelled:
-                    - x
-                    - cancelled
-
-    order_items:
-        order_item_id:
-            source_column: order_item_id
-            data_type: int
-            primary_key: true
-            allow_null: false
-            required: true
-
-        order_id:
-            source_column: order_id
-            data_type: int
-            required: true
-            allow_null: false
-            foreign_key: orders.order_id
-
-        product_id:
-            source_column: product_id
-            data_type: int
-            required: true
-            allow_null: false
-            foreign_key: products.product_id
-
-        quantity:
-            source_column: quantity
-            data_type: int
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1
-                max_value: 1000000
-                on_error: fail # fail | drop | warn
-
-        unit_price:
-            source_column: unit_price
-            data_type: money
-            required: true
-            allow_null: false
-            validation:
-                min_value: 1
-                max_value: 1000000.00
-                on_error: fail # fail | drop | warn
-
-        total_price:
-            source_column: total_price
-            data_type: money
-            allow_null: true
-            validation:
-                derived_from:
-                    formula: "quantity * unit_price"
-                    depends_on:
-                        - quantity
-                        - unit_price
+    postgres:
+        host: "localhost"
+        port: 5432
+        database: "order_management"
+        username: "postgres"
+        password: "secret"
+        schema: "public"
+        if_exists: "append"
+        batch_size: 1000        
