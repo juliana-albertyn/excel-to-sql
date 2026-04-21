@@ -5,9 +5,13 @@ __pycache__/
 # Ignore virtual environments
 .venv/
 .env/
+poetry.lock
 
 # ignore log files
 logs/
+*.log
+
+# ignore bookmarks
 .vscode/bookmarks.json
 
 
