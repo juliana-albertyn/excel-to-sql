@@ -11,7 +11,6 @@
 from typing import Any
 from sqlalchemy import create_engine, Engine
 
-import src.logging_setup as logging_setup
 from config.database_config import (
     DatabaseConfig,
     SQLiteConfig,
