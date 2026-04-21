@@ -115,6 +115,7 @@ class TableSchema:
                 col_definition.min_date = col.get("min_date")
                 col_definition.max_date = col.get("max_date")
                 col_definition.foreign_key = col.get("foreign_key")
+                col_definition.str_case = col.get("str_case", "asis")
 
                 columns.append(col_definition)
         return cls(

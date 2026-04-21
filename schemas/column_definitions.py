@@ -10,7 +10,7 @@ __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-04-02"
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -47,6 +47,8 @@ class ColumnDefinition(BaseColumn):
 
     min_date: str | None = None
     max_date: str | None = None
+
+    str_case: Literal["lower", "upper", "title", "asis"] = "asis"
 
     value_mapping: dict[str, Any] | None = None
 
