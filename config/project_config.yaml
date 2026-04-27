@@ -11,6 +11,9 @@ runtime:
     strict_validation: false # strict | permissive
     day_first_format: true
 
+#----------------#
+# Source         #
+#----------------#
 source:
     input_type: excel
     file_name: messy_orders.xlsx
