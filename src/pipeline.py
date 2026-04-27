@@ -30,6 +30,7 @@ from config.project_config import ProjectConfig
 from config.pipeline_config import PipelineConfig
 from src.extractor import Extractor
 from src.cleaner import Cleaner
+from src.transformer import Transformer
 
 from schemas.table_schema import TableSchema
 
@@ -213,14 +214,21 @@ def run_etl() -> None:
                     etl_context=etl_context,
                 )
                 df = cleaner.clean_data()
+
                 update_nan_stats(
                     nan_stats, ETLStages.CLEANED, "After cleaning", etl_context, df
                 )
 
                 # Step 4: transform
-                df = transformer.transform_data(
-                    df, table_name, pipeline_config["columns"][table_name], etl_context
+                transformer = Transformer(
+                    df=df,
+                    project_config=project_config,
+                    table_schema=schema,
+                    etl_context=etl_context,
                 )
+
+                df = transformer.transform_data()
+
                 update_nan_stats(
                     nan_stats,
                     ETLStages.TRANSFORMED,
