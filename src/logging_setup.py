@@ -23,7 +23,7 @@ def get_logger(etl_context: context.ETLContext, name: str) -> logging.Logger:
     Creates timestamped file and console handlers, applies log level and
     format settings from ETLContext, and removes older log files when the
     limit is exceeded.
-    """    
+    """
     # get the last part of the name
     words = name.split(".")
     if len(words) > 1:
@@ -71,8 +71,20 @@ def get_logger(etl_context: context.ETLContext, name: str) -> logging.Logger:
     return logger
 
 
+def set_logger_level(logger: logging.Logger, log_level: int):
+    """
+    Override the log level in the etl_context, e.g. DEBUG while testing
+    """
+    logger.setLevel(log_level)
+
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    return logger
+
+
 def shutdown():
     """
     Flush and close all logging handlers.
-    """    
+    """
     logging.shutdown()

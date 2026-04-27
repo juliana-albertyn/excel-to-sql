@@ -20,6 +20,7 @@ import pandas as pd
 from pandas import DataFrame
 import base64
 from binascii import Error as BinasciiError
+from logging import DEBUG
 
 import src.logging_setup as logging_setup
 import src.errors as errors
@@ -48,6 +49,16 @@ class Cleaner:
         self.etl_context = etl_context
         # setup logger
         self.logger = logging_setup.get_logger(etl_context, __name__)
+        if self.debug_trace:
+            self.logger = logging_setup.set_logger_level(self.logger, DEBUG)
+
+    # Debug helpers
+    def _trace(self, msg: str):
+        """
+        Emit a debug trace message when debug tracing is enabled.
+        """
+        if self.debug_trace and self.logger:
+            self.logger.debug(f"[TRACE] {msg}")
 
     def _spreadsheet_row_number(self, bad_index: int) -> int:
         assert self.project_config.source is not None
