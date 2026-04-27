@@ -17,6 +17,7 @@ from typing import Any
 
 fake = Faker()
 
+
 def fake_city() -> str:
     sa_cities = [
         "Cape Town",
@@ -28,7 +29,7 @@ def fake_city() -> str:
         "East London",
         "Polokwane",
         "Nelspruit",
-        "Kimberley"
+        "Kimberley",
     ]
     return random.choice(sa_cities)
 
@@ -70,11 +71,13 @@ def fake_date() -> Any:
     ]
     return random.choice(date_options)
 
+
 def fake_product() -> str:
     adjectives = ["Premium", "Advanced", "Eco", "Smart", "Portable"]
-    nouns = ["Keyboard", "Laptop", "Chair", "Monitor", "Headphones"]    
+    nouns = ["Keyboard", "Laptop", "Chair", "Monitor", "Headphones"]
 
-    return random.choice(adjectives) + ' ' + random.choice(nouns)
+    return random.choice(adjectives) + " " + random.choice(nouns)
+
 
 def fake_amount() -> str:
     # Amounts: sometimes integers, sometimes floats, sometimes with currency symbols
@@ -86,11 +89,27 @@ def fake_amount() -> str:
     ]
     return random.choice(amount_options)
 
+
+def fake_discount() -> str:
+    # Amounts: sometimes integers, sometimes floats, sometimes with currency symbols
+    discount_options = ["0", "0", "0", "0", "0", "0", "0", "25", "30"]
+    return random.choice(discount_options)
+
+
 def fake_order_status() -> str:
-    status_options = ["completed", "c", "complete", "done", "closed", 
-                    "pending", "p",
-                    "cancelled", "x"]
+    status_options = [
+        "completed",
+        "c",
+        "complete",
+        "done",
+        "closed",
+        "pending",
+        "p",
+        "cancelled",
+        "x",
+    ]
     return random.choice(status_options)
+
 
 # Create fake data for two sheets
 data_customers = {
@@ -100,6 +119,7 @@ data_customers = {
     "mobile": [fake_mobile_number() for _ in range(20)],
     "city": [fake_city() for _ in range(20)],
     "join_date": [fake_date() for _ in range(20)],
+    "discount_perc": [fake_discount() for _ in range(20)],
 }
 
 data_products = {
@@ -113,7 +133,7 @@ data_orders = {
     "order_id": [i for i in range(101, 121)],
     "customer_id": [i for i in range(1, 21)],
     "order_date": [fake_date() for _ in range(20)],
-    "status": [fake_order_status() for _ in range(20)]
+    "status": [fake_order_status() for _ in range(20)],
 }
 
 data_order_items = []

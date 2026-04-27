@@ -69,7 +69,7 @@ def etl_context():
         data_dir=Path("."),
         output_dir=Path("."),
         config_dir=Path("."),
-        cleaned_suffix="_clean",
+        cleaned_suffix="_cleaned",
         currency_symbol="R",
     )
     ctx.datetime_parser = ctx.get_datetime_parser(None)

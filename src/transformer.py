@@ -10,245 +10,269 @@ __author__ = "Juliana Albertyn"
 __email__ = "julie_albertyn@yahoo.com"
 __date__ = "2026-02-19"
 
-from typing import Any
 import pandas as pd
 from pandas import DataFrame
 from pandas.api.types import is_string_dtype
-from logging import Logger
 import re
+from logging import DEBUG
 
 import src.logging_setup as logging_setup
-import src.context as context
+from src.context import ETLContext
+
+from config.project_config import ProjectConfig
+
+from schemas.table_schema import TableSchema
+from schemas.column_definitions import ColumnDefinition
 
 
-def log_column_changes(
-    df: pd.DataFrame, table_name, etl_context: context.ETLContext, logger: Logger
-) -> None:
-    """
-    Log differences between original and normalised values.
+class Transformer:
+    def __init__(
+        self,
+        df: DataFrame,
+        project_config: ProjectConfig,
+        table_schema: TableSchema,
+        etl_context: ETLContext,
+        debug_trace: bool = False,
+    ):
+        self.df = df
+        self.project_config = project_config
+        self.table_schema = table_schema
+        self.etl_context = etl_context
+        self.debug_trace = debug_trace
 
-    Compares cleaned and normalised columns by type and logs only rows where
-    values changed, using row_offset-adjusted row numbers.
-    """
-    logger.info(f"Audit of transformed values for *** {table_name} ***:")
-    normalised_suffix = etl_context.normalised_suffix
-    # get the row offset from the context
-    row_offset = etl_context.row_offset
+        # setup logger
+        self.logger = logging_setup.get_logger(etl_context, __name__)
+        if self.debug_trace:
+            self.logger = logging_setup.set_logger_level(self.logger, DEBUG)
 
-    for col in df.columns:
-        if col.endswith(normalised_suffix):
-            original_col = col.replace(normalised_suffix, "")
+        self.normalised_cols: list[str] = []
 
-            orig = df[original_col]
-            normalised = df[col]
-            equal_mask = pd.Series(False, index=normalised.index)
+    # Debug helpers
+    def _trace(self, msg: str):
+        """
+        Emit a debug trace message when debug tracing is enabled.
+        """
+        if self.debug_trace and self.logger:
+            self.logger.debug(f"[TRACE] {msg}")
 
-            # 1. Missing values equal
-            both_missing = orig.isna() & normalised.isna()
+    def _log_column_changes(self) -> None:
+        """
+        Log differences between original and cleaned values.
 
-            # 2. String comparison (detects trimming)
-            if pd.api.types.is_string_dtype(normalised):
-                orig_str = orig.astype("string")
-                normalised_str = normalised.astype("string")
-                string_equal = orig_str.eq(normalised_str)
-                equal_mask = both_missing | string_equal
-
-            # 3. Numeric comparison
-            elif pd.api.types.is_numeric_dtype(normalised):
-                orig_num = pd.to_numeric(orig, errors="coerce")
-                normalised_num = pd.to_numeric(normalised, errors="coerce")
-                numeric_equal = orig_num.eq(normalised_num)
-                equal_mask = both_missing | numeric_equal
-
-            # 4. Dates comparison
-            elif pd.api.types.is_datetime64_any_dtype(normalised):
-                # Convert both to ISO8601 strings for comparison
-                orig_dt = pd.to_datetime(orig, errors="coerce")
-                normalised_dt = pd.to_datetime(normalised, errors="coerce")
-
-                orig_str = orig_dt.dt.strftime("%Y-%m-%d")
-                normalised_str = normalised_dt.dt.strftime("%Y-%m-%d")
-
-                string_equal = orig_str.eq(normalised_str)
-                equal_mask = both_missing | string_equal
-
-            diff_mask = ~equal_mask
-
-            if not diff_mask.any():
-                logger.info(f"No transformed values for column {original_col}")
-            else:
-                for idx in df.index[diff_mask]:
-                    logger.info(
-                        f"{original_col} | Row {idx + row_offset} | "
-                        f"'{df.at[idx, original_col]}' -> '{df.at[idx, col]}'"
-                    )
-
-
-def normalise_phone_numbers(
-    series: pd.Series, allow_local: bool, dialling_code: str
-) -> pd.Series:
-    """
-    Normalise phone numbers to E.164-compatible format.
-
-    Removes punctuation, handles 00 → + conversion, and optionally prefixes
-    local numbers with the configured dialling code.
-    """    
-    s = series.astype("string")
-
-    # remove spaces, dashes, brackets
-    s = s.str.replace(r"(?!^\+)[^\d]", "", regex=True)
-    # convert 00 prefix to +
-    s = s.str.replace(r"^00", "+", regex=True)
-
-    # if allow local numbers, normalise with dialling code if needed
-    if allow_local:
-        needs_country = ~s.str.startswith("+") & s.notna()
-        s = s.str.replace(r"^0", "", regex=True)
-        s = s.where(~needs_country, dialling_code + s)
-    return s
-
-
-def apply_derived_column(
-    df: pd.DataFrame,
-    target_col: str,
-    formula: str,
-    depends_on: list[str],
-    etl_context: context.ETLContext,
-    logger: Logger,
-) -> pd.DataFrame:
-    """
-    Compute a derived column using a vectorised pandas expression.
-
-    Rewrites the formula to reference cleaned columns, evaluates it only
-    where all dependencies are present, and sets invalid rows to NA.
-    Logs rows where the formula could not be applied.
-    """
-    # log
-    logger.info(f"Applying '{formula}' to {target_col}")
-
-    row_offset = etl_context.row_offset
-    original_col = target_col.replace(etl_context.normalised_suffix, "")
-
-    # use correct colunms for formula
-    cleaned_suffix = etl_context.cleaned_suffix
-    depends_on_cleaned = [f"{col}{cleaned_suffix}" for col in depends_on]
-
-    formula_cleaned = formula
-
-    for idx, col in enumerate(depends_on):
-        formula_cleaned = re.sub(
-            rf"\b{col}\b", depends_on_cleaned[idx], formula_cleaned
+        Compares cleaned and cleaned columns by type and logs only rows where
+        values changed, using row_offset-adjusted row numbers.
+        """
+        self.logger.info(
+            f"Audit of transformed values for *** {self.table_schema.table_name} ***:"
         )
+        # get the row offset from the context
 
-    # Identify rows where dependencies are complete
-    mask_valid = df[depends_on_cleaned].notna().all(axis=1)
+        for col in self.normalised_cols:
+            if col.endswith(self.etl_context.cleaned_suffix):
+                original_col = col.replace(self.etl_context.cleaned_suffix, "")
 
-    # Compute only valid rows
-    if mask_valid.any():
-        df.loc[mask_valid, target_col] = df.loc[mask_valid].eval(formula_cleaned)
+                orig = self.df[original_col]
+                cleaned = self.df[col]
+                equal_mask = pd.Series(False, index=cleaned.index)
 
-    # Set invalid rows to NA
-    df.loc[~mask_valid, target_col] = pd.NA
+                # 1. Missing values equal
+                both_missing = orig.isna() & cleaned.isna()
 
-    # Log invalid rows
-    if (~mask_valid).any():
-        invalid_indices = (df.index[~mask_valid] + row_offset).tolist()
-        logger.warning(f"Cannot compute '{original_col}' for rows: {invalid_indices}")
+                # 2. String comparison (detects trimming)
+                if pd.api.types.is_string_dtype(cleaned):
+                    orig_str = orig.astype("string")
+                    cleaned_str = cleaned.astype("string")
+                    string_equal = orig_str.eq(cleaned_str)
+                    equal_mask = both_missing | string_equal
 
-    return df
+                # 3. Numeric comparison
+                elif pd.api.types.is_numeric_dtype(cleaned):
+                    orig_num = pd.to_numeric(orig, errors="coerce")
+                    cleaned_num = pd.to_numeric(cleaned, errors="coerce")
+                    numeric_equal = orig_num.eq(cleaned_num)
+                    equal_mask = both_missing | numeric_equal
 
+                # 4. Dates comparison
+                elif pd.api.types.is_datetime64_any_dtype(cleaned):
+                    # Convert both to ISO8601 strings for comparison
+                    orig_dt = pd.to_datetime(orig, errors="coerce")
+                    cleaned_dt = pd.to_datetime(cleaned, errors="coerce")
 
-def transform_data(
-    df: DataFrame,
-    table_name: str,
-    columns_config: dict[str, Any],
-    etl_context: context.ETLContext,
-) -> DataFrame:
-    """
-    Apply transformation rules defined in the column configuration.
+                    orig_str = orig_dt.dt.strftime("%Y-%m-%d")
+                    cleaned_str = cleaned_dt.dt.strftime("%Y-%m-%d")
 
-    Handles value mappings, phone number normalisation, and derived column
-    formulas. Logs changed values, moves normalised results into cleaned
-    columns, and drops temporary normalised columns.
-    """
-    # log start of transformation
-    logger = logging_setup.get_logger(etl_context, __name__)
-    logger.info(f"Transforming data for *** {table_name} ***")
+                    string_equal = orig_str.eq(cleaned_str)
+                    equal_mask = both_missing | string_equal
 
-    # we work only with cleaned columns - keep original data intact
-    normalised_cols = []
-    cleaned_suffix = etl_context.cleaned_suffix
-    normalised_suffix = etl_context.normalised_suffix
+                diff_mask = ~equal_mask
 
-    for col_name, config in columns_config.items():
-        # log
-        logger.info(f"Transforming column {col_name}")
+                if not diff_mask.any():
+                    self.logger.info(f"No transformed values for column {original_col}")
+                else:
+                    for idx in self.df.index[diff_mask]:
+                        self.logger.info(
+                            f"{original_col} | Row {self.project_config.spreadsheet_row_number(idx)} | "
+                            f"'{self.df.at[idx, original_col]}' -> '{self.df.at[idx, col]}'"
+                        )
 
-        # set up
-        cleaned_col = f"{col_name}{cleaned_suffix}"
-        normalised_col = f"{col_name}{normalised_suffix}"
+    def _normalise_phone_numbers(
+        self, series: pd.Series, col_config: ColumnDefinition, target_col: str
+    ) -> pd.Series:
+        """
+        Normalise phone numbers to E.164-compatible format.
 
-        # get the validation mapping
-        value_map = config.get("value_mapping", None)
+        Removes punctuation, handles 00 → + conversion, and optionally prefixes
+        local numbers with the configured dialling code.
+        """
+        if col_config.validation is None:
+            return series
 
-        # normalise columns
-        if value_map is not None:
-            # keep track of which columns were affected
-            normalised_cols.append(normalised_col)
+        s = series
+        if (
+            is_string_dtype(self.df[col_config.column_name])
+            and col_config.validation.get("format", "") == "E.164"
+        ):
+            self.normalised_cols.append(target_col)
 
-            # normalise values
-            mapping = {}
-            for normalised, raw_list in value_map.items():
-                for raw_val in raw_list:
-                    mapping[str(raw_val).strip().lower()] = normalised
+            # remove spaces, dashes, brackets
+            s = (
+                s.astype(str)
+                .str.replace(r"[^\d+]", "", regex=True)
+                .str.replace(r"(?!^)\+", "", regex=True)
+            )  # convert 00 prefix to +
+            s = s.str.replace(r"^00", "+", regex=True)
 
-            df[normalised_col] = (
-                df[cleaned_col].astype("string").str.strip().str.lower().map(mapping)
+            # if allow local numbers, normalise with dialling code if needed
+            allow_local = col_config.validation.get("allow_local", False)
+            if allow_local:
+                dialling_prefix = col_config.validation.get("dialling_prefix")
+                if dialling_prefix is not None:
+                    needs_country = ~s.str.startswith("+") & s.notna()
+                    s = s.str.replace(r"^0", "", regex=True)
+                    s = s.where(~needs_country, dialling_prefix + s)
+        return s
+
+    def _apply_value_mapping(
+        self, series: pd.Series, col_config: ColumnDefinition, target_col: str
+    ) -> pd.Series:
+        if col_config.value_mapping is None:
+            return series
+
+        # keep track of which columns were affected
+        self.normalised_cols.append(target_col)
+
+        # normalise values
+        mapping = {}
+        for normalised, raw_list in col_config.value_mapping.items():
+            for raw_val in raw_list:
+                mapping[str(raw_val).strip().lower()] = normalised
+                self._trace(f"raw_val={str(raw_val)} normalised={str(normalised)}")
+
+        return series.astype("string").str.strip().str.lower().map(mapping)
+
+    def _apply_derived_column(
+        self, col_config: ColumnDefinition, target_col: str
+    ) -> None:
+        """
+        Compute a derived column using a vectorised pandas expression.
+
+        Rewrites the formula to reference cleaned columns, evaluates it only
+        where all dependencies are present, and sets invalid rows to NA.
+        Logs rows where the formula could not be applied.
+        """
+        if col_config.validation is None:
+            return
+
+        # check derived columns
+        derived_config = col_config.validation.get("derived_from", None)
+        if derived_config is None:
+            return
+
+        depends_on = derived_config.get("depends_on", None)
+        formula = derived_config.get("formula", None)
+        # remember to work with cleaned cols
+        if depends_on is None or formula is None:
+            return
+
+        self.normalised_cols.append(target_col)
+
+        self.logger.info(f"Applying '{formula}' to {target_col}")
+
+        # use correct colunms for formula
+        # original_col = target_col.replace(self.etl_context.cleaned_suffix, "")
+        depends_on_cleaned = [
+            f"{col}{self.etl_context.cleaned_suffix}" for col in depends_on
+        ]
+
+        formula_cleaned = formula
+
+        for idx, col in enumerate(depends_on):
+            formula_cleaned = re.sub(
+                rf"\b{col}\b", depends_on_cleaned[idx], formula_cleaned
             )
 
-        # get the validation configuration
-        validation_config = config.get("validation", None)
-        if validation_config is not None:
-            if (
-                is_string_dtype(df[col_name])
-                and validation_config.get("format", "") == "E.164"
-            ):
-                normalised_cols.append(normalised_col)
-                dialling_prefix = validation_config.get("dialling_prefix", "")
-                allow_local = validation_config.get("allow_local", False)
-                df[normalised_col] = normalise_phone_numbers(
-                    df[cleaned_col], allow_local, dialling_prefix
-                )
+        # Identify rows where dependencies are complete
+        mask_valid = self.df[depends_on_cleaned].notna().all(axis=1)
 
-            # check derived columns
-            derived_config = validation_config.get("derived_from", None)
-            if derived_config is None:
+        # Compute only valid rows
+        if mask_valid.any():
+            self.df.loc[mask_valid, target_col] = self.df.loc[mask_valid].eval(
+                formula_cleaned
+            )
+
+        # Set invalid rows to NA
+        self.df.loc[~mask_valid, target_col] = pd.NA
+
+        # Log invalid rows
+        if (~mask_valid).any():
+            invalid_indices = self.df.index[~mask_valid].tolist()
+            print(f"invalid indices={invalid_indices}")
+            row_numbers = [
+                self.project_config.spreadsheet_row_number(r) for r in invalid_indices
+            ]
+            print(f"row numbers={row_numbers}")
+            self.logger.warning(
+                f"Cannot compute '{target_col}' for rows: {row_numbers}"
+            )
+
+    def transform_data(self) -> DataFrame:
+        """
+        Apply transformation rules defined in the column configuration.
+
+        Handles value mappings, phone number normalisation, and derived column
+        formulas.
+        """
+        # log start of transformation
+        self.logger.info(
+            f"Transforming data for *** {self.table_schema.table_name} ***"
+        )
+
+        # we work only with cleaned columns - keep original data intact
+        cleaned_suffix = self.etl_context.cleaned_suffix
+
+        for col in self.table_schema.columns:
+            # ignore cleaned cols in this loop
+            if col.column_name.endswith(cleaned_suffix):
                 continue
-            depends_on = derived_config.get("depends_on", None)
-            formula = derived_config.get("formula", None)
-            # remember to work with cleaned cols
-            if depends_on is not None and formula is not None:
-                normalised_cols.append(normalised_col)
-                df = apply_derived_column(
-                    df=df,
-                    target_col=normalised_col,
-                    formula=formula,
-                    depends_on=depends_on,
-                    etl_context=etl_context,
-                    logger=logger,
-                )
 
-    if len(normalised_cols) > 0:
-        # just log the changed columns
-        log_column_changes(df, table_name, etl_context, logger)
+            # log
+            self.logger.info(f"Transforming column {col.column_name}")
 
-        # move the values from normalised columns into the cleaned columns and drop the normalised columns
-        for col in normalised_cols:
-            cleaned_col = col.replace(normalised_suffix, cleaned_suffix)
-            if cleaned_col in df.columns:
-                logger.warning(f"Overwriting {cleaned_col}")
-            df[cleaned_col] = df[col]
-            df.drop(columns=[col], inplace=True)
+            # set up
+            cleaned_col = f"{col.column_name}{cleaned_suffix}"
 
-    # return the dataframe
-    return df
+            self.df[cleaned_col] = self._normalise_phone_numbers(
+                self.df[cleaned_col], col, cleaned_col
+            )
+
+            self.df[cleaned_col] = self._apply_value_mapping(
+                self.df[cleaned_col], col, cleaned_col
+            )
+            self._apply_derived_column(col, cleaned_col)
+
+        if len(self.normalised_cols) > 0:
+            # just log the changed columns
+            self._log_column_changes()
+
+        # return the dataframe
+        return self.df

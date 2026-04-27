@@ -34,7 +34,6 @@ class ETLContext:
     environment: str = "development"
     # new column names created during cleaning and transformation
     cleaned_suffix: str = "_cleaned"
-    normalised_suffix: str = "_normalised"
     # for date and time parser
     min_date: datetime = datetime(1900, 1, 1, 0, 0, 0)
     locale = "en_ZA"

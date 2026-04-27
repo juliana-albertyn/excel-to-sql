@@ -1,24 +1,125 @@
-"""
-Module: test_transformer
-Purpose: STesting transformer functions.
-
-This module is part of the Fynbyte toolkit. 
-"""
-
-__author__ = "Juliana Albertyn"
-__email__ = "julie_albertyn@yahoo.com"
-__date__ = "2026-03-29"
-
-
 import pandas as pd
-from src.transformer import normalise_phone_numbers
+import pytest
+
+from src.transformer import Transformer
+from schemas.column_definitions import ColumnDefinition
+from schemas.table_schema import TableSchema
 
 
-def test_normalise_phone_numbers_basic():
-    s = pd.Series(["082 123 4567", "002712345678", None])
+@pytest.fixture
+def sample_df():
+    return pd.DataFrame(
+        {
+            "phone": ["082 123 4567", "+27821234567"],
+            "status": ["yes", "NO"],
+            "result": [None, None],
+            "a": [1, 4],
+            "b": [10, 40],
+            "phone_cleaned": ["082 123 4567", "+27821234567"],
+            "status_cleaned": ["yes", "NO"],
+            "result_cleaned": [None, None],
+            "a_cleaned": [1, 4],
+            "b_cleaned": [10, 40],
+        }
+    )
 
-    result = normalise_phone_numbers(s, allow_local=True, dialling_code="+27")
 
-    expected = pd.Series(["+27821234567", "+2712345678", None], dtype="string")
+@pytest.fixture
+def transformer(sample_df, project_config, etl_context):
+    schema = TableSchema()
+    schema.table_name = "Test"
+    schema.columns = [
+        ColumnDefinition(
+            column_name="phone",
+            data_type="str",
+            source_column="phone",
+            null_allowed=True,
+            validation={
+                "format": "E.164",
+                "allow_local": True,
+                "dialling_prefix": "+27",
+            },
+        ),
+        ColumnDefinition(
+            column_name="status",
+            data_type="str",
+            source_column="status",
+            null_allowed=True,
+            value_mapping={
+                "Y": ["yes", "YES", "Yes"],
+                "N": ["no", "NO", "No"],
+            },
+        ),
+        ColumnDefinition(
+            column_name="result",
+            data_type="int",
+            source_column="result",
+            null_allowed=True,
+            validation={
+                "derived_from": {
+                    "depends_on": ["a", "b"],
+                    "formula": "a + b",
+                }
+            },
+        ),
+        ColumnDefinition(
+            column_name="phone_cleaned",
+            data_type="str",
+            source_column="phone_cleaned",
+            null_allowed=True,
+            validation={
+                "format": "E.164",
+                "allow_local": True,
+                "dialling_prefix": "+27",
+            },
+        ),
+        ColumnDefinition(
+            column_name="status_cleaned",
+            data_type="str",
+            source_column="status_cleaned",
+            null_allowed=True,
+            value_mapping={
+                "Y": ["yes", "YES", "Yes"],
+                "N": ["no", "NO", "No"],
+            },
+        ),
+        ColumnDefinition(
+            column_name="result_cleaned",
+            data_type="int",
+            source_column="result_cleaned",
+            null_allowed=True,
+            validation={
+                "derived_from": {
+                    "depends_on": ["a", "b"],
+                    "formula": "a + b",
+                }
+            },
+        ),
+    ]
 
-    assert result.equals(expected)
+    return Transformer(
+        df=sample_df.copy(),
+        project_config=project_config,
+        table_schema=schema,
+        etl_context=etl_context,
+        debug_trace=True,
+    )
+
+
+def test_transform_data_end_to_end(transformer):
+    df = transformer.transform_data()
+
+    print(f"{df.loc[0, 'status_cleaned']}")
+    print(f"{df.loc[1, 'status_cleaned']}")
+
+    # --- PHONE NORMALISATION ---
+    assert df.loc[0, "phone_cleaned"] == "+27821234567"
+    assert df.loc[1, "phone_cleaned"] == "+27821234567"
+
+    # --- DERIVED COLUMN ---
+    assert df.loc[0, "result_cleaned"] == 11  # 1 + 10
+    assert df.loc[1, "result_cleaned"] == 44  # 4 + 40
+
+    # --- VALUE MAPPING ---
+    assert df.loc[0, "status_cleaned"] == "Y"
+    assert df.loc[1, "status_cleaned"] == "N"

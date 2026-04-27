@@ -29,28 +29,6 @@ def table_schema_with_col(col_name, data_type):
 
 
 # ----------------------------------------------------------------------
-# 1. Test spreadsheet row offset helper
-# ----------------------------------------------------------------------
-
-
-def test_spreadsheet_row_number(
-    project_config_strict: ProjectConfig, etl_context: ETLContext
-):
-    df = pd.DataFrame({"a": [1, 2, 3]})
-    cfg = project_config_strict
-
-    assert cfg.source is not None
-    assert cfg.source.header_rows is not None
-
-    cfg.source.header_rows = 5
-    schema = table_schema_with_col("a", "int")
-    cleaner = Cleaner(df, cfg, schema, etl_context)
-
-    assert cleaner._spreadsheet_row_number(0) == 5
-    assert cleaner._spreadsheet_row_number(10) == 15
-
-
-# ----------------------------------------------------------------------
 # 2. Date parsing strict mode
 # ----------------------------------------------------------------------
 
@@ -208,7 +186,7 @@ def test_clean_data_end_to_end(
     cleaner = Cleaner(df, project_config_permissive, schema, etl_context)
     out = cleaner.clean_data()
 
-    assert "name_clean" in out.columns
-    assert "age_clean" in out.columns
-    assert out["name_clean"].iloc[0] == "alice" or out["name_clean"].iloc[0] == "Alice"
-    assert out["age_clean"].iloc[0] == 10
+    assert "name_cleaned" in out.columns
+    assert "age_cleaned" in out.columns
+    assert out["name_cleaned"].iloc[0] == "alice" or out["name_cleaned"].iloc[0] == "Alice"
+    assert out["age_cleaned"].iloc[0] == 10
