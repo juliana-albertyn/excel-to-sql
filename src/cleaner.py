@@ -188,7 +188,7 @@ class Cleaner:
             if mask.any():
                 bad_index = mask.index[0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid datetime '{bad_value}' at row {row_number}",
@@ -346,7 +346,7 @@ class Cleaner:
 
                 bad_index = series.index[mask][0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid numeric value '{bad_value}' at row {row_number}",
@@ -494,7 +494,7 @@ class Cleaner:
         if self.project_config.runtime.strict_validation and decoded.isna().any():
             bad_index = decoded.index[decoded.isna()][0]
             bad_value = series.loc[bad_index]
-            row_number = self._spreadsheet_row_number(int(bad_index))
+            row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
             raise errors.CleanerError(
                 f"Invalid image data '{bad_value}' at row {row_number}",
