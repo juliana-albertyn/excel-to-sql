@@ -151,3 +151,8 @@ class ProjectConfig:
             output=output_settings,
             mappings=mapping_config,
         )
+
+    def spreadsheet_row_number(self, dataframe_index: int) -> int:
+        assert self.source is not None
+        header_rows = self.source.header_rows or 0
+        return dataframe_index + header_rows

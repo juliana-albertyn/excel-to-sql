@@ -97,7 +97,7 @@ class Cleaner:
             if mask.any():
                 bad_index = mask.index[0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
                 raise errors.CleanerError(
                     f"Invalid date '{bad_value}' at row {row_number}",
                     errors.ErrorContext(
@@ -142,7 +142,7 @@ class Cleaner:
             if mask.any():
                 bad_index = mask.index[0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid time '{bad_value}' at row {row_number}",
@@ -231,7 +231,7 @@ class Cleaner:
 
                 bad_index = series.index[mask][0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid money value '{bad_value}' at row {row_number}",
@@ -590,7 +590,9 @@ class Cleaner:
                     self.logger.info(f"No cleaned values for column {original_col}")
                 else:
                     for idx in self.df.index[diff_mask]:
-                        row_number = self._spreadsheet_row_number(int(idx))
+                        row_number = self.project_config.spreadsheet_row_number(
+                            int(idx)
+                        )
                         self.logger.info(
                             f"{original_col} | Row {row_number} | "
                             f"'{self.df.at[idx, original_col]}' -> '{self.df.at[idx, col]}'"
