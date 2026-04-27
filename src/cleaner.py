@@ -42,11 +42,13 @@ class Cleaner:
         project_config: ProjectConfig,
         table_schema: TableSchema,
         etl_context: ETLContext,
+        debug_trace: bool = False,
     ):
         self.df = df
         self.project_config = project_config
         self.table_schema = table_schema
         self.etl_context = etl_context
+        self.debug_trace = debug_trace
         # setup logger
         self.logger = logging_setup.get_logger(etl_context, __name__)
         if self.debug_trace:
@@ -59,12 +61,6 @@ class Cleaner:
         """
         if self.debug_trace and self.logger:
             self.logger.debug(f"[TRACE] {msg}")
-
-    def _spreadsheet_row_number(self, bad_index: int) -> int:
-        assert self.project_config.source is not None
-        header_rows = self.project_config.source.header_rows
-        assert header_rows is not None
-        return bad_index + header_rows
 
     # column level functions
     def _col_to_date(self, series: pd.Series, col: ColumnDefinition) -> pd.Series:
@@ -309,7 +305,7 @@ class Cleaner:
 
                 bad_index = series.index[mask][0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid integer '{bad_value}' at row {row_number}",
@@ -383,7 +379,7 @@ class Cleaner:
 
                 bad_index = series.index[mask][0]
                 bad_value = series.loc[bad_index]
-                row_number = self._spreadsheet_row_number(int(bad_index))
+                row_number = self.project_config.spreadsheet_row_number(int(bad_index))
 
                 raise errors.CleanerError(
                     f"Invalid decimal/float value '{bad_value}' at row {row_number}",
@@ -427,7 +423,7 @@ class Cleaner:
         if self.project_config.runtime.strict_validation and out.isna().any():
             bad_index = out.index[out.isna()][0]
             bad_value = series.loc[bad_index]
-            row_number = self._spreadsheet_row_number(int(bad_index))
+            row_number = self.project_config.spreadsheet_row_number(int(bad_index))
             raise errors.CleanerError(
                 f"Invalid binary value '{bad_value}' at row {row_number}",
                 errors.ErrorContext(
